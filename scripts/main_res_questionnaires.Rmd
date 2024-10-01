@@ -1,0 +1,301 @@
+---
+title: "Questionnaires and Factor analysis"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+```{r}
+library(here)
+here::i_am(".ed-foraging-root")
+renv::restore(here::here())
+
+renv::load(here::here())
+ 
+
+required_packages = c("glmmTMB", "car", "parameters","tidyr", "see", "dplyr", "lmerTest", "parameters", "emmeans", "modelbased", "ggpubr", "kableExtra", "psych", "GPArotation", "corrplot", "nFactors")
+invisible(lapply(required_packages, require, character.only = TRUE))
+
+here::i_am(".hidden_root_foraging")
+adjustment_method = "holm"
+```
+```{r}
+data <- read.csv(here::here( 'anon-data', 'task_data', 'full_beh_data.csv'))
+data$logRT <- log(data$RT)
+data$log_patch_actions_taken <- log(data$patch_actions_taken)
+data <- data %>%
+  mutate(decision_type = recode(decision_type, `1` = 0, `2` = 1))
+
+## add questionnaires data 
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', 'anonymized_processed_questonnaire_data.csv'))
+qs$id <- qs$PROLIFICID
+qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou",  "oci")]
+data = merge(data, qs, by=c("id")) # NA's match
+
+
+
+fa.scores <- read.csv(here::here( 'anon-data', 'questionnaires', 'factor_scores.csv'))
+data = merge(data, fa.scores, by=c("id")) # NA's match
+
+# extract questionnaires by group 
+vars2summarize <- c("age", "bmi", "EducationYears", "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou",  "oci", "F1", "F2", "F3")
+
+df <- data %>%   group_by(id, group) %>%
+  summarise_at(vars2summarize, mean, na.rm = TRUE)
+
+write.csv(df, here::here("output", "basic_demographics.csv"))
+```
+## Func
+
+```{r}
+run_descriptives <- function(df, vec) {
+  sdf <- df[, append("group", vec)]
+  
+  # Calculate means
+  group_means <- sdf %>%
+    group_by(group) %>%
+    summarise(across(all_of(vec), mean, na.rm = TRUE)) %>%
+    pivot_longer(-group, names_to = "variable", values_to = "mean")
+  
+  # Calculate standard deviations
+  group_sds <- sdf %>%
+    group_by(group) %>%
+    summarise(across(all_of(vec), sd, na.rm = TRUE)) %>%
+    pivot_longer(-group, names_to = "variable", values_to = "sd")
+  
+  # Calculate p-values, t-scores, and degrees of freedom
+  pvals <- sdf %>%
+    summarise(across(all_of(vec), ~t.test(.[group == "group1"], .[group == "group2"])$p.value))
+  tscores <- sdf %>%
+    summarise(across(all_of(vec), ~t.test(.[group == "group1"], .[group == "group2"])$statistic))
+  dfs <- sdf %>%
+    summarise(across(all_of(vec), ~t.test(.[group == "group1"], .[group == "group2"])$parameter))
+  
+  # Combine p-values, t-scores, and degrees of freedom into a single data frame
+  stats <- rbind(pvals, tscores, dfs)
+  stats <- data.table::transpose(stats)
+  colnames(stats) <- c("p", "t", "df")
+  stats$variable <- vec
+  
+  # Reshape group means and standard deviations
+  group_means <- group_means %>%
+    pivot_wider(names_from = group, values_from = mean, names_prefix = "mean_")
+  
+  group_sds <- group_sds %>%
+    pivot_wider(names_from = group, values_from = sd, names_prefix = "sd_")
+  
+  # Merge all statistics into a final data frame
+  final_stats <- merge(stats, group_means, by = "variable")
+  final_stats <- merge(final_stats, group_sds, by = "variable")
+
+  return(final_stats)
+}
+
+
+```
+
+## Group means
+```{r}
+
+df2 <- df %>%   group_by(group) %>%
+  summarise_at(vars2summarize, mean, na.rm = TRUE)
+df2
+write.csv(df2, here::here("output", "basic_demographics_group_means.csv"))
+```
+
+```{r}
+
+df2 <- data %>%
+  group_by(id, group) %>%
+  summarise(
+    gender = mean(gender, na.rm = TRUE)
+  )
+
+
+result <- df2 %>%
+  group_by(gender, group) %>%
+  count() %>%
+  ungroup()
+
+print(result)
+```
+
+## Group tests
+```{r}
+stats <- run_descriptives(df, vars2summarize)
+stats$p <- round(as.numeric(stats$p), 4)
+stats$t <- round(as.numeric(stats$t), 3)
+stats$mean_group1 <- round(as.numeric(stats$mean_group1), 2)
+stats$mean_group2 <- round(as.numeric(stats$mean_group2), 2)
+stats$sd_group1 <- round(as.numeric(stats$sd_group1), 2)
+stats$sd_group2 <- round(as.numeric(stats$sd_group2), 2)
+stats$df <- round(as.numeric(stats$df), 2)
+stats <- stats[,c("variable","mean_group1", "sd_group1","mean_group2", "sd_group2", "t", "df", "p")]
+
+# Create a publication-ready table
+tb <- kable(stats, caption = "Table 1") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
+  column_spec(1, bold = FALSE) %>%
+  #column_spec(2, bold = FALSE, color = "black") %>%
+  add_header_above(c(" " = 1, "Group 1" = 2, "Group 2" = 2, " "=3)) %>%
+  save_kable(here::here("output", "table1.png"))
+write.csv(stats, here::here("output", "table1.csv"))
+print(stats)
+# selected 
+stats2<-stats[stats$variable %in% c("age", "bdi", "F1", "F2", "F3"),]
+write.csv(stats2, here::here("output", "table1_reduced.csv"))
+tb <- kable(stats2, caption = "Table 1") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
+  column_spec(1, bold = FALSE) %>%
+  #column_spec(2, bold = FALSE, color = "black") %>%
+  add_header_above(c(" " = 2, "Group 1" = 2, "Group 2" = 2, " "=3)) %>%
+  save_kable(here::here("output", "table1_reduced.png"))
+
+```
+
+#lot 
+```{r}
+df_long <- data %>%
+  group_by(id, group) %>%
+  summarise_at(c("F1", "F2", "F3"), mean, na.rm = TRUE) %>%
+  select(F1, F2, F3, group) %>%
+  pivot_longer(cols = c(F1, F2, F3), names_to = "Variable", values_to = "Value")
+
+df_summary <- df_long %>%
+  group_by(group, Variable) %>%
+  summarise(
+    mean_value = mean(Value),
+    se_value = sd(Value) / sqrt(n())
+  )
+
+# Create the bar plot with error bars
+ggplot(df_summary, aes(x = Variable, y = mean_value, fill = group)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black") +
+  geom_errorbar(aes(ymin = mean_value - se_value, ymax = mean_value + se_value), 
+                position = position_dodge(0.9), width = 0.25) +
+  theme_minimal() +
+  labs(title = "Bar Plot of F1, F2, and F3 by Group",
+       x = "Variable",
+       y = "Mean Value",
+       fill = "Group") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+### Factor analysis
+```{r fig.width=15, fig.height=15}
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', 'anonymized_item_questonnaire_data.csv'))
+
+cdf <- cor(qs[, !(colnames(qs) %in% c("X", "PROLIFICID"))], method="spearman")
+corrplot::corrplot(cdf)
+```
+
+```{r fig.width=15}
+#res = parameters::n_factors(qs[, !(colnames(qs) %in% c("X", "PROLIFICID"))], type="FA", rotation="oblimin")
+#see::plots(res)
+#print(res)
+evals <- eigen(cdf)$values 
+psych::scree(cdf, factors = TRUE)
+```
+#CNG
+```{r}
+tt <- qs[, !(colnames(qs) %in% c("X", "PROLIFICID"))]
+m <- nFactors::nCng(data.frame(tt), cor = TRUE, model = "factors", details = TRUE)
+print(m)
+m$detail
+plotuScree(data.frame(tt), main=paste(m$nFactors,
+                          " factors retained by the CNG procedure",
+                          sep=""))
+```
+
+```{r}
+library(tidyr)
+fa3 <- fa(as.matrix(cdf), nfactors = 3, rotate = "oblimin", fm = "minres", scores = "Bartlett")
+
+fa3.load <- data.frame(unclass(fa3$loadings))
+
+questionnaire_info <- data.frame(
+  item = colnames(cdf),
+  #questionnaire = c(rep("EAT26", 25), rep("EDE-Q", 22), rep("AAI", 10), 
+   #                 rep("STAI", 20), rep("BDI", 21), 
+  #                  rep("IOU", 21), rep("OCD", 18))  # Adjust this based on your actual data
+    questionnaire = c(rep("EAT-26 (Eating Attitudes)", 25), rep("EDE-Q (Eating Disorder)", 22), rep("AAI (Appearance Anxiety)", 10), 
+                    rep("STAI-T (Trait Anxiety)", 20), rep("BDI (Depression)", 21), 
+                    rep("IOU (Intolerance of Uncertainty)", 21), rep("OCI (Obsessive-Compulsive Inventory)", 18))  # Adjust this based on your actual data
+)
+
+# Melt the data for ggplot
+fa3.load$item <- rownames(fa3.load)
+fa3.load <- fa3.load %>% gather(factor, loading, -item)
+
+# Rename factors
+fa3.load$factor <- recode(fa3.load$factor, 
+                          MR1 = "F1: Eating Attitudes", 
+                          MR2 = "F2: Uncertainty Sensitivity", 
+                          MR3 = "F3: Anxious Depression")
+
+# Merge with questionnaire info
+plot_data <- merge(fa3.load, questionnaire_info, by = "item")
+```
+
+```{r fig.width=15, fig.height=7}
+# Define colors for each questionnaire
+questionnaire_colors <- c("EAT-26 (Eating Attitudes)" = "purple", "EDE-Q (Eating Disorder)" = "deeppink", "AAI (Appearance Anxiety)" = "brown2", 
+                          "STAI-T (Trait Anxiety)" = "midnightblue", "BDI (Depression)" = "dodgerblue", 
+                          "IOU (Intolerance of Uncertainty)" = "darkgoldenrod2", "OCI (Obsessive-Compulsive Inventory)" = "seagreen4")
+
+# Plot factor loadings
+plot_factor_loadings <- ggplot(plot_data, aes(x = item, y = loading, fill = questionnaire)) +
+  geom_bar(stat = "identity") +
+  geom_hline(yintercept = 0, color = "black") +  # Add y=0 line
+  facet_wrap(~ factor, scales = "free_x", ncol = 1) +
+  scale_fill_manual(values = questionnaire_colors) +
+  theme(axis.text.x = element_blank(),  # Remove x tick labels
+        axis.ticks.x = element_blank(),  # Remove x tick marks
+        strip.background = element_blank(),  # Remove background from strip
+        strip.text = element_text(size = 14, face = "plain", hjust = 0),  # Move title to the left and increase font size
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank(),  # Remove minor grid lines
+        panel.background = element_blank(),  # Remove panel background
+        axis.line.x = element_blank(),  # Remove x axis line
+        axis.line.y = element_blank(),  # Remove y axis line
+        axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 10)) +
+  labs(x = "Individual items", y = "Loading",fill = "")
+
+
+
+# Print the plot
+print(plot_factor_loadings)
+
+
+```
+
+```{r}
+
+# Plot factor loadings
+plot_factor_loadings <- ggplot(plot_data, aes(x = item, y = loading, fill = questionnaire)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ factor, scales = "free_x") +
+  scale_fill_manual(values = questionnaire_colors) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(x = "Individual questionnaire items", y = "Respective loadings for each factor")
+
+# Prepare the correlation matrix
+cor_matrix <- cor(cdf)
+
+# Plot the correlation matrix
+plot_correlation_matrix <- corrplot(cor_matrix, method = "color", tl.cex = 0.6)
+
+
+```
+
+```{r}
+ddf <- qs[, !(colnames(qs) %in% c("X", "PROLIFICID"))]
+scores <- data.frame(cbind(qs[,"PROLIFICID"], factor.scores(ddf, fa3, method = "Thurstone")$scores))
+scores[,2:4] <- data.frame(lapply(scores[,2:4], as.numeric))
+colnames(scores) <- c("id", "F1", "F2", "F3")
+write.csv(scores, here::here( 'anon-data', 'questionnaires', 'factor_scores.csv'))
+```
+

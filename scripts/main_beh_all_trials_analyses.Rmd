@@ -1,0 +1,1353 @@
+---
+title: "Behavioural analysis: All trials"
+author: "Ondrej Zika"
+date: "2024-06-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(here)
+here::i_am(".ed-foraging-root")
+renv::restore(here::here())
+
+renv::load(here::here())
+ 
+
+required_packages = c("glmmTMB", "car", "parameters", "see", "bayestestR", "dplyr", "lmerTest", "effectsize", "emmeans", "modelbased", "ggpubr", "gtools", "tidyr")
+invisible(lapply(required_packages, require, character.only = TRUE))
+emmeans::emm_options(pbkrtest.limit = 11000)
+here::i_am(".hidden_root_foraging")
+adjustment_method = "holm"
+```
+```{r}
+data <- read.csv(here::here( 'anon-data', 'task_data', 'full_beh_data.csv'))
+data$reward <- as.numeric(data$patch_reward_recieved)
+data$logRT <- log(data$RT)
+data$log_patch_actions_taken <- log(data$patch_actions_taken)
+data <- data %>%
+  mutate(decision_type = recode(decision_type, `1` = 0, `2` = 1)) %>% 
+  mutate(decision = case_when(decision_type == 0 ~ "stay", decision_type == 1 ~ "leave"))
+data<- data[data$RT!=0,]  
+
+# calculate cumulative sum within each patch
+data <- data %>%
+  mutate(set = cumsum(patch_reward_recieved == 0)) %>%
+  group_by(set) %>%
+  mutate(cum_reward_patch = cumsum(ifelse(patch_reward_recieved == 0, 0, patch_reward_recieved))) %>%
+  ungroup() %>%
+  select(-set)
+data$cum_reward_patch <- data$cum_reward_patch/100
+
+## add questionnaires data 
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', 'anonymized_processed_questonnaire_data.csv'))
+qs$id <- qs$PROLIFICID
+qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou",  "oci")]
+data = merge(data, qs, by=c("id"), all.x = TRUE) # NA's match
+
+# add factor scores
+fa.scores <- read.csv(here::here( 'anon-data', 'questionnaires', 'factor_scores.csv'))
+data = merge(data, fa.scores, by=c("id"),all.x = TRUE) # NA's match
+
+rew <- read.csv(here::here( 'anon-data', 'task_data', 'rewards_data.csv'))
+rew$total_rewards <- rew$patch_reward_recieved
+data = merge(data, rew, by=c("id","travel_time_lvl", "decay_lvl"),all.x = TRUE) # NA's match
+
+data$blk_fac <- factor(data$blk_number, labels=c(1,2,3,4), ordered=TRUE)
+
+linkfunc ="log"
+#
+
+```
+
+# Overall Reward 
+
+```{r}
+df = data %>%
+  group_by(id, group) %>%
+  summarise_at(c("reward"), sum, na.rm = TRUE)
+df2  <- df %>%
+  group_by(group) %>%
+  summarise_at(c("reward"), mean, na.rm = TRUE)
+df2
+```
+
+# Reaction times analysis from each trial
+## Descriptives
+Here, the main thing is whether the RTs differ by decision type (we already know their RT patterns for leaving-only trials)
+
+
+### decision
+RTs are faster for leave than stay trials
+```{r  fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, decision) %>%
+  summarise_at(c("logRT"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = logRT, fill = decision, x=decision)) +
+  geom_point(aes(color = decision), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "blue", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "blue", "blue", "lightblue")) 
+g
+```
+
+### travel time x reward decay
+```{r}
+df = data %>%
+  group_by(id, decay_fac, travel_time_lvl) %>%
+  summarise_at(c("logRT"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = logRT, fill = interaction(decay_fac, travel_time_lvl), x=travel_time_lvl)) +
+  geom_point(aes(color = interaction(decay_fac, travel_time_lvl)), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) 
+g
+```
+### travel time x group x decision
+
+decision = leave, travel_time_lvl = long:
+ contrast        estimate     SE  df z.ratio p.value
+ group1 - group2   -0.201 0.1001 Inf  -2.009  0.0446
+ 
+ only leave long is significant (though it's close)
+ 
+ The main effect of group is pretty close p=0.08
+```{r}
+df = data %>%
+  group_by(id, decision, group, travel_time_lvl) %>%
+  summarise_at(c("logRT"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = logRT, fill = interaction(decision, group), x=decision)) +
+  geom_point(aes(color = interaction(decision, group)), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) + 
+  facet_grid(rows = vars(travel_time_lvl))
+g
+```
+### decision x group x decision
+
+decision = stay, decay_fac = slow:
+ contrast        estimate     SE  df z.ratio p.value
+ group1 - group2   -0.224 0.1055 Inf  -2.123  0.0338
+ 
+Stay-slow is significant between groups - group 1 is faster when the decay is slow and the decision is to stay
+
+```{r}
+df = data %>%
+  group_by(id, decision, group, decay_fac) %>%
+  summarise_at(c("logRT"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = logRT, fill = interaction(decision, group), x=decision)) +
+  geom_point(aes(color = interaction(decision, group)), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) + 
+  facet_grid(rows = vars(decay_fac))
+g
+```
+
+
+## Stats
+In contrast to analyses in the leaving-only trials, here we also include "decision" as a variable of interest (stay/leave)
+```{r}
+
+linkfunc ="log"
+m1 <- lme4::lmer(data=data, RT ~ decay_fac*travel_time_lvl*group*decision + (1|id))
+
+m1.sl <- lme4::lmer(data=data, RT ~ decay_fac*travel_time_lvl*group*decision + (1+decay_fac+travel_time_lvl+decision|id))
+
+
+glm1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*decision + (1|id), family = Gamma(link=linkfunc))
+glm1.sl <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*decision + (1+decay_fac+travel_time_lvl+decision|id), family = Gamma(link=linkfunc))
+glm1.sl.dc <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*decision + (1+decay_fac|id), family = Gamma(link=linkfunc))
+glm1.sl.tt <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*decision + (1+travel_time_lvl|id), family = Gamma(link=linkfunc))
+glm1.sl.dec <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*decision + (1+decision|id), family = Gamma(link=linkfunc))
+
+performance::compare_performance( m1, m1.sl, glm1, glm1.sl, glm1.sl.dc, glm1.sl.tt, glm1.sl.dec)#
+
+#
+```
+
+### Analysis of winning model
+
+```{r}
+car::Anova(glm1.sl)
+
+```
+
+Posthoc: interaction travel time * decay
+```{r}
+
+em <- emmeans(glm1.sl, pairwise ~ travel_time_lvl*decay_fac, adjust=adjustment_method)
+em
+```
+decay_lvl:group:decision                  5.4842  1   0.019189 *  
+
+```{r}
+em <- emmeans(glm1.sl, pairwise ~ group | decision*decay_fac, adjust=adjustment_method)
+em
+```
+
+travel_time_lvl:group:decision            5.2130  1   0.022418 * 
+```{r}
+em <- emmeans(glm1.sl, pairwise ~ group | decision*travel_time_lvl, adjust=adjustment_method)
+em
+```
+
+## RTs as a function of remaining time
+NOTE: I removed the decision from the random slopes here - the models were not converging
+```{r}
+##glm1.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*decision + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+#glm1.sl.2 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*decision*remaining_time + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+
+# models with speeding up within block
+glm1.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+glm1.sl.2 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*remaining_time + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+
+# models with speeding up within episode
+glm2.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*patch_time + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+
+# models with both 
+glm3.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*patch_time + decay_fac*travel_time_lvl*group*remaining_time + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+
+
+performance::compare_performance( glm1.sl.1, glm1.sl.2, glm2.sl.1, glm3.sl.1)#
+
+# models with speeding up effect in block fit much better thatn speeding up within patch
+
+```
+```{r}
+car::Anova(glm3.sl.1)
+```
+Response: RT
+                                                  Chisq Df Pr(>Chisq)    
+decay_fac                                        0.2599  1  0.6101574    
+travel_time_lvl                                 36.0456  1  1.927e-09 ***
+group                                            3.3710  1  0.0663543 .  
+patch_time                                       7.5065  1  0.0061478 ** 
+remaining_time                                 200.3123  1  < 2.2e-16 ***
+decay_fac:travel_time_lvl                       38.3844  1  5.810e-10 ***
+decay_fac:group                                  4.0476  1  0.0442350 *  
+travel_time_lvl:group                            0.0012  1  0.9724441    
+decay_fac:patch_time                             0.5203  1  0.4707249    
+travel_time_lvl:patch_time                     139.9621  1  < 2.2e-16 ***
+group:patch_time                                 1.2143  1  0.2704900    
+decay_fac:remaining_time                         4.2270  1  0.0397862 *  
+travel_time_lvl:remaining_time                  12.4001  1  0.0004293 ***
+group:remaining_time                            44.4220  1  2.647e-11 ***
+decay_fac:travel_time_lvl:group                  5.8159  1  0.0158823 *  
+decay_fac:travel_time_lvl:patch_time             9.5107  1  0.0020427 ** 
+decay_fac:group:patch_time                       8.8450  1  0.0029389 ** 
+travel_time_lvl:group:patch_time                 0.5644  1  0.4525022    
+decay_fac:travel_time_lvl:remaining_time         0.0026  1  0.9594673    
+decay_fac:group:remaining_time                   0.0036  1  0.9520263    
+travel_time_lvl:group:remaining_time             1.8695  1  0.1715370    
+decay_fac:travel_time_lvl:group:patch_time      12.8677  1  0.0003343 ***
+decay_fac:travel_time_lvl:group:remaining_time   0.0720  1  0.7885129    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+```{r}
+car::Anova(glm1.sl.2)
+
+car::Anova(glm2.sl.1)
+
+# three way int decay*group*patch time
+em <- emtrends(glm2.sl.1, pairwise ~ group | decay_fac , var = "patch_time", adjust=adjustment_method)
+em
+em <- emtrends(glm2.sl.1, pairwise ~  decay_fac | group , var = "patch_time", adjust=adjustment_method)
+em
+em <- emtrends(glm2.sl.1, pairwise ~  decay_fac * group , var = "patch_time", adjust=adjustment_method)
+em
+sl<-modelbased::estimate_slopes(glm2.sl.1, trend = "patch_time", at=c("decay_fac", "group"), ci = 0.95)
+sl
+
+# group 1 gets faster within patch in the fast condition 
+# group 2 get slower in the fast reward decay condition over time but faster in the slow decay condition
+
+em2 <- emtrends(glm2.sl.1, pairwise ~ group | decay_fac*travel_time_lvl , var = "patch_time", adjust=adjustment_method)
+em2
+
+sl<-modelbased::estimate_slopes(glm2.sl.1, trend = "patch_time", at=c( "group", "decay_fac", "travel_time_lvl"), ci = 0.95)
+sl
+
+```
+
+
+# Model with speeding up per block
+glm1.sl.2:
+Response: RT
+                                                  Chisq Df Pr(>Chisq)    
+decay_fac                                        0.1033  1   0.747864    
+travel_time_lvl                                 26.8778  1  2.167e-07 ***
+group                                            3.0899  1   0.078782 .  
+remaining_time                                 210.1438  1  < 2.2e-16 ***
+decay_fac:travel_time_lvl                      101.1114  1  < 2.2e-16 ***
+decay_fac:group                                  1.3775  1   0.240533    
+travel_time_lvl:group                            0.4250  1   0.514466    
+decay_fac:remaining_time                         3.9154  1   0.047845 *  
+travel_time_lvl:remaining_time                   9.1381  1   0.002503 ** 
+group:remaining_time                            39.0113  1  4.214e-10 ***
+decay_fac:travel_time_lvl:group                  3.4565  1   0.063004 .  
+decay_fac:travel_time_lvl:remaining_time         0.6779  1   0.410321    
+decay_fac:group:remaining_time                   0.0249  1   0.874517    
+travel_time_lvl:group:remaining_time             1.8937  1   0.168784    
+decay_fac:travel_time_lvl:group:remaining_time   0.4349  1   0.509592 
+
+# Model with speeding up per episode - here speeding up intearacts with decay_fac
+decay_fac                                    0.0640  1   0.800306    
+travel_time_lvl                             25.6496  1  4.094e-07 ***
+group                                        2.8406  1   0.091908 .  
+patch_time                                   2.3580  1   0.124643    
+decay_fac:travel_time_lvl                   41.7257  1  1.050e-10 ***
+decay_fac:group                              1.8229  1   0.176963    
+travel_time_lvl:group                        0.5338  1   0.465017    
+decay_fac:patch_time                         0.4227  1   0.515597    
+travel_time_lvl:patch_time                 146.1175  1  < 2.2e-16 ***
+group:patch_time                             0.4829  1   0.487111    
+decay_fac:travel_time_lvl:group              5.2389  1   0.022087 *  
+decay_fac:travel_time_lvl:patch_time        15.4060  1  8.671e-05 ***
+decay_fac:group:patch_time                  16.6962  1  4.387e-05 ***
+travel_time_lvl:group:patch_time             1.3270  1   0.249333    
+decay_fac:travel_time_lvl:group:patch_time  10.4580  1   0.001221 ** 
+
+### 4-way interaction = decay_fac:travel_time_lvl:group:patch_time 
+$contrasts
+decay_fac = fast, travel_time_lvl = long:
+ contrast         estimate      SE  df z.ratio p.value
+ group1 - group2 -0.002194 0.00219 Inf  -1.001  0.3168
+
+decay_fac = slow, travel_time_lvl = long:
+ contrast         estimate      SE  df z.ratio p.value
+ group1 - group2  0.000446 0.00140 Inf   0.318  0.7507
+
+decay_fac = fast, travel_time_lvl = short:
+ contrast         estimate      SE  df z.ratio p.value
+ group1 - group2 -0.008740 0.00240 Inf  -3.641  0.0003
+
+decay_fac = slow, travel_time_lvl = short:
+ contrast         estimate      SE  df z.ratio p.value
+ group1 - group2  0.005502 0.00147 Inf   3.739  0.0002
+ 
+
+```{r}
+car::Anova(glm2.sl.1)
+```
+
+
+group:remaining_time                            39.0090  1  4.219e-10 ***
+
+
+
+### Speeding up overall
+
+```{r}
+em <- emtrends(glm1.sl.2, pairwise ~ 1 , var = "remaining_time", adjust=adjustment_method)
+em
+
+data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time), q = seq(0,1,0.05))
+
+df <- data %>% 
+  group_by(id, rem_time_q) %>% 
+  summarise_at(c( "logRT", "remaining_time"), mean)
+
+g <- ggplot(aes(y = logRT, x = rem_time_q, fill=rem_time_q), data = df) +
+  geom_point(alpha=0.2, aes(color=rem_time_q), show.legend = FALSE) +
+  geom_boxplot(aes( x=rem_time_q, y=logRT), inherit.aes = FALSE, width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=FALSE)   + 
+ #geom_smooth(aes(x = remaining_time, y=logRT), inherit.aes = FALSE, method = lm, formula = y ~ x, se = TRUE, legend=FALSE) +
+
+  scale_fill_manual(values = rep(c("maroon4"), 20))  + 
+  scale_color_manual(values = rep(c("maroon4"), 20))  
+g
+
+## alternative plot
+data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time), q = seq(0,1,0.02))
+df <- data %>% 
+  group_by(id, group,rem_time_q) %>% 
+  summarise_at(c("logRT", "remaining_time"), mean)
+
+library(ggplot2)
+g <- ggplot(aes(y = logRT, x = remaining_time), data = df) +
+  geom_point(alpha=0.2) +
+    geom_smooth(method = 'lm', se = TRUE)  + 
+  scale_colour_brewer(palette="Set1")  
+  #ggtitle("F1 ~ TF1 * wave * Deaths ") 
+g
+```
+
+### Speeding up by group
+NOTE: Results may be misleading due to involvement in interactions
+$emtrends
+ group  remaining_time.trend       SE  df asymp.LCL asymp.UCL
+ group1             0.000506 3.58e-05 Inf  0.000436  0.000577
+ group2             0.000191 3.38e-05 Inf  0.000125  0.000257
+
+Results are averaged over the levels of: decay_fac, travel_time_lvl 
+Confidence level used: 0.95 
+
+$contrasts
+ contrast        estimate       SE  df z.ratio p.value
+ group1 - group2 0.000315 4.92e-05 Inf   6.405  <.0001
+
+```{r}
+em <- emtrends(glm1.sl.2, pairwise ~ group , var = "remaining_time", adjust=adjustment_method)
+em
+
+data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time), q = seq(0,1,0.05))
+
+df <- data %>% 
+  group_by(id, group, rem_time_q) %>% 
+  summarise_at(c( "logRT", "remaining_time"), mean)
+
+g <- ggplot(aes(y = logRT, x = rem_time_q, fill=interaction(group,rem_time_q)), data = df) +
+  geom_point(alpha=0.2, aes(color=group), show.legend = FALSE) +
+  geom_boxplot( width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=FALSE)   + 
+ #geom_smooth(aes(x = remaining_time, y=logRT), inherit.aes = FALSE, method = lm, formula = y ~ x, se = TRUE, legend=FALSE) +
+
+  scale_fill_manual(values = rep(c("maroon4", "dodgerblue"), 20))  + 
+  scale_color_manual(values = rep(c("maroon4","dodgerblue"), 20))  
+g
+```
+## Calculate what the "speeding up" effect means in terms of real reaction times
+```{r}
+
+data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time), q = seq(0,1,0.1))
+
+df <- data %>% 
+  group_by( group, rem_time_q) %>% 
+  summarise_at(c( "RT", "remaining_time"), mean)
+df
+```
+```{r fig.width=4, fig.height=6}
+df <- data %>% 
+  group_by(id, group,rem_time_q) %>% 
+  summarise_at(c("logRT", "remaining_time"), mean)
+
+library(ggplot2)
+g <- ggplot(aes(y = logRT, x = remaining_time, color=group), data = df) +
+  geom_point(alpha=0.2) +
+    geom_smooth(method = 'lm', se = TRUE)  + 
+  scale_color_manual(values = rep(c("maroon4","dodgerblue"), 20))  
+  #ggtitle("F1 ~ TF1 * wave * Deaths ") 
+g
+```
+### Remaining time final figure 
+
+```{r fig.width=5.4, fig.height=10}
+df <- data %>% 
+  group_by(id, group,rem_time_q) %>% 
+  summarise_at(c("logRT", "remaining_time"), mean)
+
+df2 <- df %>% 
+  group_by(id, group) %>% 
+  summarise_at(c("logRT", "remaining_time"), mean)
+
+
+df2 <- df2 %>%
+  mutate(color = case_when(group == "group1" ~ "maroon4", group == "group2" ~ "dodgerblue"))
+
+library(ggplot2)
+g <- ggplot(aes(y = logRT, x = remaining_time, color=id), data = df) +
+ # geom_point(alpha=0.05, show.legend = FALSE) +
+ #   geom_smooth(method = 'lm', se = FALSE, show.legend = FALSE, alpha=0.1)  + 
+  #geom_line(stat="smooth", method = "lm", formula = y ~ x,
+   #           size = 0.5,      alpha = 0.5, show.legend = FALSE) +
+  stat_smooth( geom='line', alpha=0.1, se=FALSE, show.legend = FALSE, method = 'lm', formula = y ~ x) + 
+  #stat_smooth(aes(y = logRT, x = remaining_time, color=group), data = df, geom='line', alpha=0.1, se=FALSE, show.legend = FALSE) + 
+  scale_color_manual(values = c(c("maroon4","dodgerblue"), df2$color) ) +
+  scale_x_reverse() +
+
+  geom_smooth(aes(y = logRT, x = remaining_time, color=group), data = df, method = 'lm', se = TRUE, show.legend = FALSE)   + 
+    theme(panel.background = element_blank(),  # Ensure background is fully transparent
+        panel.grid.major = element_blank(),   # Remove major grid lines
+        panel.grid.minor = element_blank(),  
+            axis.line = element_line(color = "black"),  # Add axis lines
+    axis.ticks = element_line(color = "black"))  + # Add axis ticks) +
+   labs(
+    x = "Remaining Time in Block (s)",  # Label for the x-axis
+    y = "Log Reaction Time"        # Label for the y-axis
+  ) 
+
+  #ylim(-3.2, 0.1) 
+
+  
+  #ggtitle("F1 ~ TF1 * wave * Deaths ") 
+g
+
+ggsave(
+  here::here("output", "rt_speeding_up.pdf"), 
+  scale = 1,
+  width = 3,
+  height = 5,
+  units = c("in"),
+  dpi = 300)
+```
+## Linking speeding up effect to the amount of reward (Watch out this is EPISODE)
+1) Calculate reward in each episode
+2) Calculate speeding up effect within each episode
+3) Run a regression and plot them
+```{r}
+
+linkfunc="log"
+data$unique_episode <- paste0("bl", data$blk_number, "_ep", data$episode)
+
+m <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group + (1+decay_fac+travel_time_lvl+remaining_time|unique_episode/id), family = Gamma(link=linkfunc))
+
+# Get speeding up effect for each episode (while controlling for other vars)
+sl<-data.frame(ranef(m)$cond$`id:unique_episode`)
+sl$rawvar <- rownames(sl)
+sl <- sl %>%
+  tidyr::separate(rawvar, into = c("id", "unique_episode"), sep = ":")
+
+# Get rewards for each episode
+ep_rewards <- data %>% 
+  group_by(id, group,unique_episode, blk_number, episode) %>% 
+  summarise_at(c("reward"), sum, na.omit = TRUE)
+
+# Merge
+df = merge(sl, ep_rewards, by = c("id", "unique_episode"))
+
+hist(df$remaining_time, 100)
+
+# Test the relationship statistically 
+df$remaining_time_z <- scale(df$remaining_time)
+m.rew <- lmerTest::lmer(data=df, reward ~ remaining_time_z*group  + (1|blk_number/id))
+
+car::Anova(m.rew)
+#em <- emtrends(m.rew, pairwise ~ 1 , var = "remaining_time_z", adjust=adjustment_method)
+#em
+
+dost <- 0
+if (dost==1) {
+  sl<-modelbased::estimate_slopes(m.rew, trend = "remaining_time_z", ci = 0.95)
+  sl
+  
+  # Build relationship sting 
+  if (sl$p < 0.001) { 
+    p = "p<0.001"} else {
+      p = paste0('p=', toString(round(sl$p,4)))
+    }
+   p_string = paste0('β=', toString(round(sl$Coefficient,2)), ' [',toString(round(sl$CI_low,2)), ', ', toString(round(sl$CI_high,2)), '], ', p )
+}
+# Average speeding up and reward effects within participant 
+df2 <- df %>% 
+  group_by(id, group) %>% 
+  summarise_at(c("reward", "remaining_time"), mean)
+
+
+# Plot
+g <- ggplot(aes(y = reward, x = remaining_time), data = df2) +
+    geom_point(alpha=0.4, colour="seagreen4") +
+    geom_smooth(method = 'lm', se = TRUE, legend=TRUE)  + 
+    scale_colour_brewer(palette="Set1")  + 
+
+    ggpubr::stat_cor(method = "spearman",  alternative = "two.sided",  cor.coef.name = c("r"),  label.sep = ", ",  label.x.npc = "left",  label.y.npc = "bottom", digits = 3, r.digits = 3, p.digits = 3) +
+   ylab("Reward attained within episode") + 
+   xlab("Speeding up effect (positive vals=faster speeding up)") +
+   scale_x_continuous(breaks=c(-0.1, 0, 0.1)) + 
+   #annotate("text", x = 0, y = 650, label = p_string) + 
+      theme(panel.background = element_blank(),  # Ensure background is fully transparent
+        panel.grid.major = element_blank(),   # Remove major grid lines
+        panel.grid.minor = element_blank(),  
+            axis.line = element_line(color = "black"),  # Add axis lines
+    axis.ticks = element_line(color = "black"))   # Add axis ticks) +
+
+  print(g)
+  
+
+
+```
+
+### Relating speeding up to reward in each block 
+
+```{r}
+
+linkfunc="log"
+
+
+m <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group + (1+decay_fac+travel_time_lvl+remaining_time|blk_fac/id), family = Gamma(link=linkfunc))
+
+# Get speeding up effect for each episode (while controlling for other vars)
+sl<-data.frame(ranef(m)$cond$`id:blk_fac`)
+sl$rawvar <- rownames(sl)
+sl <- sl %>%
+  tidyr::separate(rawvar, into = c("id", "blk_fac"), sep = ":")
+
+# Get rewards for each episode
+ep_rewards <- data %>% 
+  group_by(id, group, blk_fac) %>% 
+  summarise_at(c("reward"), sum, na.omit = TRUE)
+
+# Merge
+df = merge(sl, ep_rewards, by = c("id", "blk_fac"))
+
+hist(df$remaining_time, 100)
+
+# Test the relationship statistically 
+df$remaining_time_z <- scale(df$remaining_time)
+m.rew <- lmerTest::lmer(data=df, reward ~ remaining_time_z*group*blk_fac  + (1|id))
+
+car::Anova(m.rew)
+#em <- emtrends(m.rew, pairwise ~ 1 , var = "remaining_time_z", adjust=adjustment_method)
+#em
+
+do_reg <- 0
+if (do_reg==1) {
+  sl<-modelbased::estimate_slopes(m.rew, trend = "remaining_time_z", ci = 0.95)
+  sl
+  # Build relationship sting 
+  if (sl$p < 0.001) { 
+    p = "p<0.001"} else {
+      p = paste0('p=', toString(round(sl$p,4)))
+    }
+   p_string = paste0('β=', toString(round(sl$Coefficient,2)), ' [',toString(round(sl$CI_low,2)), ', ', toString(round(sl$CI_high,2)), '], ', p )
+}
+
+
+# Average speeding up and reward effects within participant 
+df2 <- df %>% 
+  group_by(id, group) %>% 
+  summarise_at(c("reward", "remaining_time"), mean)
+
+
+# Plot
+g <- ggplot(aes(y = reward, x = remaining_time), data = df2) +
+    geom_point(alpha=0.4, colour="seagreen4") +
+    geom_smooth(method = 'lm', se = TRUE, legend=TRUE)  + 
+    scale_colour_brewer(palette="Set1")  + 
+
+    ggpubr::stat_cor(method = "spearman",  alternative = "two.sided",  cor.coef.name = c("r"),  label.sep = ", ",  label.x.npc = "left",  label.y.npc = "bottom", digits = 3, r.digits = 3, p.digits = 3) +
+   ylab("Reward attained within block") + 
+   xlab("Speeding up effect (positive vals=faster speeding up)") +
+   scale_x_continuous(breaks=c(-0.1, 0, 0.1)) + 
+  # annotate("text", x = 0, y = 12000, label = p_string) + 
+      theme(panel.background = element_blank(),  # Ensure background is fully transparent
+        panel.grid.major = element_blank(),   # Remove major grid lines
+        panel.grid.minor = element_blank(),  
+            axis.line = element_line(color = "black"),  # Add axis lines
+    axis.ticks = element_line(color = "black"))   # Add axis ticks) +
+
+  print(g)
+  
+
+
+```
+
+### Relate speeding up to optimal number of actions
+```{r}
+
+linkfunc="log"
+
+m <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group + (1+decay_fac+travel_time_lvl+remaining_time|blk_fac/id), family = Gamma(link=linkfunc))
+
+# Get speeding up effect for each episode (while controlling for other vars)
+sl<-data.frame(ranef(m)$cond$`id:blk_fac`)
+sl$rawvar <- rownames(sl)
+sl <- sl %>%
+  tidyr::separate(rawvar, into = c("id", "blk_fac"), sep = ":")
+
+# Get rewards for each episode
+ep_rewards <- data %>% 
+  group_by(id, group, blk_fac) %>% 
+  summarise_at(c("reward"), sum, na.omit = TRUE)
+
+# Merge rewards
+df = merge(sl, ep_rewards, by = c("id", "blk_fac"))
+
+# Get disitance from optimal number of actions
+ldata <- read.csv(here::here( 'anon-data', 'task_data', 'leaving_time_data.csv'))
+ldata$blk_fac <- factor(ldata$blk_number, labels=c(1,2,3,4), ordered=TRUE)
+optim_actions <- data.frame(
+  travel_time_lvl = c("short", "short", "long", "long"),
+  decay_fac = c("slow", "fast", "slow", "fast"),
+  optimal_leaving = c(4, 3, 6, 5)
+)
+ldata <- merge(ldata, optim_actions,  by=c("travel_time_lvl", "decay_fac"))
+ldata$optim_dev <- ldata$patch_actions_taken - ldata$optimal_leaving
+
+ep_optim_leaving <- ldata %>% 
+  group_by(id, group, blk_fac) %>% 
+  summarise_at(c("optim_dev"), mean, na.omit = TRUE)
+
+# Merge optimal leaving
+df = merge(sl, ep_optim_leaving[, c("id", "blk_fac", "group", "optim_dev")], by = c("id", "blk_fac"))
+
+hist(df$remaining_time, 100)
+hist(df$optim_dev, 100)
+
+# Test the relationship statistically 
+df$remaining_time_z <- scale(df$remaining_time)
+m.optact <- lmerTest::lmer(data=df, optim_dev ~ remaining_time_z*group  + (1|id))
+
+car::Anova(m.optact)
+#em <- emtrends(m.rew, pairwise ~ 1 , var = "remaining_time_z", adjust=adjustment_method)
+#em
+sl<-modelbased::estimate_slopes(m.optact, trend = "remaining_time_z", ci = 0.95)
+sl
+
+# Build relationship sting 
+if (sl$p < 0.001) { 
+  p = "p<0.001"} else {
+    p = paste0('p=', toString(round(sl$p,4)))
+  }
+ p_string = paste0('β=', toString(round(sl$Coefficient,2)), ' [',toString(round(sl$CI_low,2)), ', ', toString(round(sl$CI_high,2)), '], ', p )
+
+# Average speeding up and reward effects within participant 
+df2 <- df %>% 
+  group_by(id, group) %>% 
+  summarise_at(c("optim_dev", "remaining_time"), mean)
+
+
+# Plot
+g <- ggplot(aes(y = optim_dev, x = remaining_time), data = df2) +
+    geom_point(alpha=0.4, colour="seagreen4") +
+    geom_smooth(method = 'lm', se = TRUE, legend=TRUE)  + 
+    scale_colour_brewer(palette="Set1")  + 
+
+  #  ggpubr::stat_cor(method = "pearson",  alternative = "two.sided",  cor.coef.name = c("r"),  label.sep = ", ",  label.x.npc = "left",  label.y.npc = "bottom", digits = 3, r.digits = 3, p.digits = 3) +
+   ylab("Deviation from optimal number of actions") + 
+   xlab("Speeding up effect (positive vals=faster speeding up)") +
+   scale_x_continuous(breaks=c(-0.1, 0, 0.1)) + 
+   annotate("text", x = 0, y = 15, label = p_string) + 
+      theme(panel.background = element_blank(),  # Ensure background is fully transparent
+        panel.grid.major = element_blank(),   # Remove major grid lines
+        panel.grid.minor = element_blank(),  
+            axis.line = element_line(color = "black"),  # Add axis lines
+    axis.ticks = element_line(color = "black"))   # Add axis ticks) +
+
+  print(g)
+  
+```
+# plot by block
+```{r fig.width=10, fig.height=4}
+# Average speeding up and reward effects within participant by block
+df2 <- df %>% 
+  group_by(id, group, blk_fac) %>% 
+  summarise_at(c("optim_dev", "remaining_time"), mean)
+
+
+# Plot
+g <- ggplot(aes(y = optim_dev, x = remaining_time), data = df2) +
+    geom_point(alpha=0.4, colour="seagreen4") +
+    geom_smooth(method = 'lm', se = TRUE, legend=TRUE)  + 
+    scale_colour_brewer(palette="Set1")  + 
+
+    ggpubr::stat_cor(method = "pearson",  alternative = "two.sided",  cor.coef.name = c("r"),  label.sep = ", ",  label.x.npc = "left",  label.y.npc = "bottom", digits = 3, r.digits = 3, p.digits = 3) +
+   ylab("Deviation from optimal number of actions") + 
+   xlab("Speeding up effect (positive vals=faster speeding up)") +
+   scale_x_continuous(breaks=c(-0.1, 0, 0.1)) + 
+   #annotate("text", x = 0, y = 15, label = p_string) + 
+      theme(panel.background = element_blank(),  # Ensure background is fully transparent
+        panel.grid.major = element_blank(),   # Remove major grid lines
+        panel.grid.minor = element_blank(),  
+            axis.line = element_line(color = "black"),  # Add axis lines
+    axis.ticks = element_line(color = "black"))  +  # Add axis ticks) +
+    facet_grid(cols = vars(blk_fac))
+  print(g)
+  
+
+```
+
+### Speeding up effect and number of actions
+
+```{r}
+
+linkfunc="log"
+data$unique_episode <- paste0("bl", data$blk_number, "_ep", data$episode)
+
+m <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group + (1+remaining_time+decay_fac+travel_time_lvl|unique_episode/id), family = Gamma(link=linkfunc))
+
+sl<-data.frame(ranef(m)$cond$`id:unique_episode`)
+sl$rawvar <- rownames(sl)
+sl <- sl %>%
+  tidyr::separate(rawvar, into = c("id", "unique_episode"), sep = ":")
+
+dtf2 <- data[data$decision %in% "leave",]
+
+ep_actions <- dtf2 %>% 
+  group_by(id, group,unique_episode, blk_number, episode) %>% 
+  summarise_at(c("patch_actions_taken"), sum, na.omit = TRUE)
+
+df = merge(sl, ep_actions, by = c("id", "unique_episode"))
+
+hist(df$remaining_time, 100)
+
+
+# Test the relationship statistically 
+df$remaining_time_z <- scale(df$remaining_time)
+m.rew <- lmerTest::lmer(data=df, patch_actions_taken ~ remaining_time_z*group  + (1|blk_number/id))
+
+car::Anova(m.rew)
+#em <- emtrends(m.rew, pairwise ~ 1 , var = "remaining_time_z", adjust=adjustment_method)
+#em
+sl<-modelbased::estimate_slopes(m.rew, trend = "remaining_time_z", ci = 0.95)
+sl
+
+# Build relationship sting 
+if (sl$p < 0.001) { 
+  p = "p<0.001"} else {
+    p = paste0('p=', toString(round(sl$p,4)))
+  }
+ p_string = paste0('β=', toString(round(sl$Coefficient,2)), ' [',toString(round(sl$CI_low,2)), ', ', toString(round(sl$CI_high,2)), '], ', p )
+
+ 
+
+
+df2 <- df %>% 
+  group_by(id, group) %>% 
+  summarise_at(c("patch_actions_taken", "remaining_time"), mean)
+
+g <- ggplot(aes(y = patch_actions_taken, x = remaining_time), data = df2) +
+    geom_point(alpha=0.4) +
+    geom_smooth(method = 'lm', se = TRUE, legend=TRUE)  + 
+    scale_colour_brewer(palette="Set1")  + 
+    #ggpubr::stat_cor(method = "pearson",  alternative = "two.sided",  cor.coef.name = c("r"),  label.sep = ", ",  label.x.npc = "left",  label.y.npc = "bottom", digits = 3, r.digits = 3, p.digits = 3) +
+   ylab("Number of actions within an episode") + 
+   xlab("Speeding up effect (positive vals=faster speeding up)") +
+   scale_x_continuous(breaks=c(-0.1, 0, 0.1)) + 
+   annotate("text", x = 0, y = 18, label = p_string)
+    
+  print(g)
+  
+
+
+```
+
+# Also look at reward effects as a consequence of F1
+
+### F1 and reward
+```{r fig.width=5, fig.height=5}
+ep_rewards <- data %>% 
+  group_by(id, group) %>% 
+  summarise_at(c("reward"), sum, na.omit = TRUE)
+ids <- data %>% 
+  group_by(id, group) %>% 
+  summarise_at(c("F1", "F2", "F3"), mean, na.omit = TRUE)
+dfid = merge(ids, ep_rewards, by = c("id"))
+
+
+#decay_fac*travel_time_lvl*group + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+
+m<-lm(data=dfid, reward ~ F1 )
+car::Anova(m)
+
+
+corrplot::corrplot(cor(dfid[,c("reward", "F1", "F2", "F3")]), method = "number")
+
+g <- ggplot(aes(x = reward, y = F1), data = dfid) +
+    geom_point(alpha=0.6, size = 3, color = "purple") +  # Increase dot size and change color
+    geom_smooth(method = 'lm', se = TRUE, color = "purple", fill = "purple", alpha = 0.3) +  # Change regression line color, opaque dodgerblue shading
+    scale_colour_brewer(palette="Set1") +
+    ggpubr::stat_cor(method = "spearman",  alternative = "two.sided", 
+                     cor.coef.name = c("r"), label.sep = ", ", 
+                     label.x.npc = "left", label.y.npc = "bottom", 
+                     digits = 3, r.digits = 3, p.digits = 3,
+                     size = 6,  # Make the correlation label bigger
+                     label.padding = unit(0.4, "lines"),  # Padding inside the box
+                     label.r = unit(0.2, "lines"),  # Rounded corners
+                     label.background = element_rect(fill = "white", color = "purple", size = 0.5)) +  # White background, dodgerblue border, rounded edges
+    ylab("Factor 1: Eating attitudes") + 
+    xlab("Total Reward") + 
+    theme(panel.background = element_blank(),  # Ensure background is transparent
+          panel.grid.major = element_blank(),   # Remove major grid lines
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(color = "black"),  # Add axis lines
+          axis.ticks = element_line(color = "black"),
+          axis.title = element_text(size = 16, color = "black"),  # Increase axis labels size and make text black
+          axis.text = element_text(size = 14, color = "black")) +  # Increase tick label size and color to black
+    scale_x_continuous(breaks = scales::pretty_breaks(n = 4)) +  # Reduce number of x ticks
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 4))  # Reduce number of y ticks
+
+print(g)
+ggsave(
+  here::here("output", "F1_rewards_corr.pdf"), 
+  scale = 1,
+  width = 5,
+  height = 5,
+  units = c("in"),
+  dpi = 300)
+```
+## Reward F1 and conditions
+```{r}
+
+ep_rewards <- data %>% 
+  group_by(id, decay_fac, travel_time_lvl, group) %>% 
+  summarise_at(c("reward"), sum, na.omit = TRUE)
+ids <- data %>% 
+  group_by(id, decay_fac, travel_time_lvl, group) %>% 
+  summarise_at(c("F1", "F2", "F3"), mean, na.omit = TRUE)
+dfid = merge(ids, ep_rewards, by = c("id", "decay_fac", "travel_time_lvl"))
+
+
+#decay_fac*travel_time_lvl*group + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+
+#m<-lm(data=dfid, reward ~ F1*decay_fac*travel_time_lvl )
+m<-lmerTest::lmer(data=dfid, reward ~ F1*decay_fac*travel_time_lvl + (1|id))
+car::Anova(m, type="II")
+
+
+corrplot::corrplot(cor(dfid[,c("reward", "F1", "F2", "F3")]), method = "number")
+
+g <- ggplot(aes(y = reward, x = F1), data = dfid) +
+    geom_point(alpha=0.4) +
+    geom_smooth(method = 'lm', se = TRUE, legend=TRUE)  + 
+    scale_colour_brewer(palette="Set1")  + 
+    ggpubr::stat_cor(method = "spearman",  alternative = "two.sided",  cor.coef.name = c("r"),  label.sep = ", ",  label.x.npc = "left",  label.y.npc = "bottom", digits = 3, r.digits = 3, p.digits = 3) +
+   ylab("Factor 1: Eating attitudes") + 
+   xlab("Reward")  + 
+  theme(panel.background = element_blank(),  # Ensure background is fully transparent
+        panel.grid.major = element_blank(),   # Remove major grid lines
+        panel.grid.minor = element_blank(),  
+            axis.line = element_line(color = "black"),  # Add axis lines
+    axis.ticks = element_line(color = "black")) + 
+  facet_grid(cols = vars(decay_fac), rows = vars(travel_time_lvl))
+   #scale_x_continuous(breaks=c(-0.1, 0, 0.1)) 
+    
+  print(g)
+
+```
+
+### F1 and speeding up 
+```{r}
+
+```
+
+### F1, speeding up and reward
+```{r fig.width=6, fig.height=6}
+linkfunc="log"
+
+m <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl + (1+decay_fac+travel_time_lvl+remaining_time|blk_fac/id), family = Gamma(link=linkfunc))
+
+# Get speeding up effect for each episode (while controlling for other vars)
+sl<-data.frame(ranef(m)$cond$`id:blk_fac`)
+sl$rawvar <- rownames(sl)
+sl <- sl %>%
+  tidyr::separate(rawvar, into = c("id", "blk_fac"), sep = ":")
+
+# Get rewards for each episode
+ep_rewards <- data %>% 
+  group_by(id, group, blk_fac) %>% 
+  summarise_at(c("reward"), sum, na.omit = TRUE)
+
+# Merge rewards
+df = merge(sl, ep_rewards, by = c("id", "blk_fac"))
+
+# Get disitance from optimal number of actions
+ldata <- read.csv(here::here( 'anon-data', 'task_data', 'leaving_time_data.csv'))
+ldata$blk_fac <- factor(ldata$blk_number, labels=c(1,2,3,4), ordered=TRUE)
+optim_actions <- data.frame(
+  travel_time_lvl = c("short", "short", "long", "long"),
+  decay_fac = c("slow", "fast", "slow", "fast"),
+  optimal_leaving = c(4, 3, 6, 5)
+)
+ldata <- merge(ldata, optim_actions,  by=c("travel_time_lvl", "decay_fac"))
+ldata$optim_dev <- ldata$patch_actions_taken - ldata$optimal_leaving
+
+ep_optim_leaving <- ldata %>% 
+  group_by(id, group, blk_fac) %>% 
+  summarise_at(c("optim_dev"), mean, na.omit = TRUE)
+
+# Merge optimal leaving
+df = merge(sl, ep_optim_leaving[, c("id", "blk_fac", "group", "optim_dev")], by = c("id", "blk_fac"))
+
+# add F1 
+ids <- data %>% 
+  group_by(id, group) %>% 
+  summarise_at(c("F1", "F2", "F3"), mean, na.omit = TRUE)
+# Merge ids
+df = merge(sl, ids[, c("id", "F1", "F2", "F3")], by = c("id"))
+
+df2 <- df %>% 
+  group_by(id) %>% 
+  summarise_at(c("F1", "remaining_time"), mean)
+
+
+  
+g <- ggplot(aes(y = F1, x = remaining_time), data = df2) +
+    geom_point(alpha=0.6, size = 3, color = "deeppink") +  # Increase dot size and change color
+    geom_smooth(method = 'lm', se = TRUE, color = "deeppink", fill = "deeppink", alpha = 0.3) +  # Change regression line color, opaque dodgerblue shading
+    scale_colour_brewer(palette="Set1") +
+    ggpubr::stat_cor(method = "spearman",  alternative = "two.sided", 
+                     cor.coef.name = c("r"), label.sep = ", ", 
+                     label.x.npc = "left", label.y.npc = "bottom", 
+                     digits = 3, r.digits = 3, p.digits = 3,
+                     size = 6,  # Make the correlation label bigger
+                     label.padding = unit(0.4, "lines"),  # Padding inside the box
+                     label.r = unit(0.2, "lines"),  # Rounded corners
+                     label.background = element_rect(fill = "white", color = "deeppink", size = 0.5)) +  # White background, dodgerblue border, rounded edges
+   ylab("F1: Eating attitudes") + 
+   xlab("Speeding up effect (positive vals=faster speeding up)") +
+    theme(panel.background = element_blank(),  # Ensure background is transparent
+          panel.grid.major = element_blank(),   # Remove major grid lines
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(color = "black"),  # Add axis lines
+          axis.ticks = element_line(color = "black"),
+          axis.title = element_text(size = 16, color = "black"),  # Increase axis labels size and make text black
+          axis.text = element_text(size = 14, color = "black")) +  # Increase tick label size and color to black
+    scale_x_continuous(breaks = scales::pretty_breaks(n = 4)) +  # Reduce number of x ticks
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 4))  # Reduce number of y ticks
+
+print(g)
+
+ggsave(
+  here::here("output", "F1_speeding_up_corr.pdf"), 
+  scale = 1,
+  width = 5,
+  height = 5,
+  units = c("in"),
+  dpi = 300)
+```
+
+
+
+### Group by decision
+While in Group 2 the RT difference between stay and leave is minimal, in Group 1 leave decisions are faster
+ 
+group2 leave - group2 stay   -0.0799 0.0135 Inf  -5.901  <.0001
+
+```{r}
+glm1.sl.2b <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*decision*remaining_time + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+
+em <- emmeans(glm1.sl.2b, pairwise ~ group * decision, adjust=adjustment_method)
+em
+
+df = data %>%
+  group_by(id, decision, group) %>%
+  summarise_at(c("logRT"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = logRT, fill = interaction(decision, group), x=decision)) +
+  geom_point(aes(color = interaction(decision, group)), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) 
+g
+```
+
+## Is the "speeding up" effect on RTs best explained by EDs? 
+
+Plots
+```{r fig.width=4, fig.height=6}
+data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time), q = seq(0,1,0.05))
+data$F1.ms <- gtools::quantcut(data$F1, q = c(0, 0.5, 1), 
+                                 labels = c("low", "high"))
+data$F2.ms <- gtools::quantcut(data$F2, q = c(0, 0.5, 1), 
+                                 labels = c("low", "high"))
+data$F3.ms <- gtools::quantcut(data$F3, q = c(0, 0.5, 1), 
+                                 labels = c("low", "high"))
+
+## GROUP
+df <- data %>% 
+  group_by(id, group,rem_time_q) %>% 
+  summarise_at(c("logRT", "remaining_time"), mean)
+g <- ggplot(aes(y = logRT, x = remaining_time, color=group), data = df) +
+  geom_point(alpha=0.2) +
+    geom_smooth(method = 'lm', se = TRUE)  + 
+  scale_color_manual(values = rep(c("maroon4","dodgerblue"), 20))  
+  #ggtitle("F1 ~ TF1 * wave * Deaths ") 
+g
+
+
+## F1 ED
+df <- data %>% 
+  group_by(id, F1.ms,rem_time_q) %>% 
+  summarise_at(c("logRT", "remaining_time"), mean)
+g <- ggplot(aes(y = logRT, x = remaining_time, color=F1.ms), data = df) +
+  geom_point(alpha=0.2) +
+    geom_smooth(method = 'lm', se = TRUE)  + 
+  scale_color_manual(values = rep(c("dodgerblue", "maroon4"), 20))  
+  ggtitle("Split by F1") 
+g
+
+## F2 Uncertainty
+df <- data %>% 
+  group_by(id, F2.ms,rem_time_q) %>% 
+  summarise_at(c("logRT", "remaining_time"), mean)
+g <- ggplot(aes(y = logRT, x = remaining_time, color=F2.ms), data = df) +
+  geom_point(alpha=0.2) +
+    geom_smooth(method = 'lm', se = TRUE)  + 
+  scale_color_manual(values = rep(c("dodgerblue", "maroon4"), 20))  
+  ggtitle("Split by F2") 
+g
+
+## F3 Anxious Depression
+df <- data %>% 
+  group_by(id, F3.ms,rem_time_q) %>% 
+  summarise_at(c("logRT", "remaining_time"), mean)
+g <- ggplot(aes(y = logRT, x = remaining_time, color=F3.ms), data = df) +
+  geom_point(alpha=0.2) +
+    geom_smooth(method = 'lm', se = TRUE)  + 
+  scale_color_manual(values = rep(c("dodgerblue", "maroon4"), 20))  
+  ggtitle("Split by F3") 
+g
+```
+
+## Model comparison for 
+
+```{r}
+pm1.sl.g <- glmmTMB::glmmTMB(data=data, formula=RT ~ group*remaining_time + (1|id), family=Gamma(link=linkfunc))
+pm1.sl.f1 <- glmmTMB::glmmTMB(data=data, formula=RT ~ F1*remaining_time + (1|id), family=Gamma(link=linkfunc))
+pm1.sl.f2 <- glmmTMB::glmmTMB(data=data, formula=RT ~ F2*remaining_time + (1|id), family=Gamma(link=linkfunc))
+pm1.sl.f3 <- glmmTMB::glmmTMB(data=data, formula=RT ~ F3*remaining_time + (1|id), family=Gamma(link=linkfunc))
+performance::compare_performance(pm1.sl.g, pm1.sl.f1, pm1.sl.f2, pm1.sl.f3)
+```
+
+```{r}
+car::Anova(pm1.sl.g)
+car::Anova(pm1.sl.f1)
+car::Anova(pm1.sl.f2)
+car::Anova(pm1.sl.f3)
+
+```
+
+
+
+
+# Speeding up effect over time 
+
+```{r}
+smod <- glmmTMB::glmmTMB(data=data, RT ~ 1 + (1+remaining_time|blk_number/id), family = Gamma(link=linkfunc))
+
+sl<-data.frame(ranef(smod)$cond$`id:blk_number`)
+sl$rawvar <- rownames(sl)
+sl <- sl %>%
+  separate(rawvar, into = c("id", "blk_number"), sep = ":")
+
+
+ep_rewards <- data %>% 
+  group_by(id, group, blk_number) %>% 
+  summarise_at(c("reward"), sum)
+
+df = merge(sl, ep_rewards, by = c("id", "blk_number"))
+
+
+g <- ggplot(data = df, aes(y = remaining_time, fill = interaction(blk_number, group), x=blk_number)) +
+  geom_point(aes(color = interaction(blk_number, group)), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c(rep("maroon4",4), rep("dodgerblue",4))) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c(rep("maroon4",4), rep("dodgerblue",4))) + 
+  ylab("Speeding up effect (remaining time slope)")
+g
+
+
+df$blk_number <- paste0("bl", as.factor(df$blk_number))
+g <- ggplot(data = df, aes(y = reward, fill = interaction(blk_number, group), x=blk_number)) +
+  geom_point(aes(color = interaction(blk_number, group)), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c(rep("maroon4",4), rep("dodgerblue",4))) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c(rep("maroon4",4), rep("dodgerblue",4))) + 
+  ylab("Rewards")
+g
+
+
+### How does attained reward relate to slope of speeding up over time? 
+m<-lmer(data=df, reward ~ blk_number*remaining_time + (1 |id))
+anova(m)
+```
+
+
+
+
+
+```{r}
+linkfunc="log"
+data$unique_episode <- paste0(toString(data$episode), paste0("bl", toString(data$blk_number)))
+
+smod <- glmmTMB::glmmTMB(data=data, RT ~ 1 + (1+remaining_time|id), family = Gamma(link=linkfunc))
+
+sl<-data.frame(ranef(smod)$cond$`id`)
+sl$rawvar <- rownames(sl)
+sl <- sl %>%
+  tidyr::separate(rawvar, into = c("id"), sep = ":")
+
+ep_rewards <- data %>% 
+  group_by(id, group, blk_number, episode) %>% 
+  summarise_at(c("reward"), sum, na.omit = TRUE)
+
+df = merge(sl, ep_rewards, by = c("id"))
+
+
+cdf <- df %>%
+  group_by(id,group) %>%
+  summarise(correlation = cor(reward, remaining_time, use = "complete.obs"))
+
+g <- ggplot(data = cdf, aes(y = correlation, x=group, fill=group)) +
+  geom_point(aes=aes(color=group), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values =  c("maroon4", "dodgerblue")) + 
+  ylab("Link between reward and speeding up effect")
+g
+
+#t.test(cdf$correlation, mu=0)
+
+
+## GLM 
+m <- lmer(data=df, reward~remaining_time*group + (1|id))
+car::Anova(m)
+
+### plot 
+
+cdf <- df %>%
+  group_by(id,group) %>%
+  summarise(reward =mean(reward, na.rm=TRUE), remaining_time=mean(remaining_time, na.rm=TRUE))
+
+g <- ggplot(aes(y = reward, x = remaining_time), data = cdf) +
+    geom_point(alpha=0.4) +
+    geom_smooth(method = 'lm', se = TRUE, legend=TRUE)  + 
+    scale_colour_brewer(palette="Set1")  + 
+    ggpubr::stat_cor(method = "pearson",  alternative = "two.sided",  cor.coef.name = c("r"),  label.sep = ", ",  label.x.npc = "left",  label.y.npc = "bottom", digits = 3, r.digits = 3, p.digits = 3) +
+   ylab("Reward attained within episode") + 
+   xlab("Speeding up effect (positive vals=faster speeding up)") +
+   scale_x_continuous(breaks=c(-0.00001, 0, 0.00001))
+    
+  print(g)
+  
+  
+g <- ggplot(aes(y = reward, x = remaining_time, group=group), data = cdf) +
+    geom_point(alpha=0.4) +
+    geom_smooth(method = 'lm', se = TRUE, legend=TRUE)  + 
+    scale_colour_brewer(palette="Set1")  + 
+    ggpubr::stat_cor(method = "pearson",  alternative = "two.sided",  cor.coef.name = c("r"),  label.sep = ", ",  label.x.npc = "left",  label.y.npc = "bottom", digits = 3, r.digits = 3, p.digits = 3) +
+   ylab("Reward attained within episode") + 
+   xlab("Speeding up effect (positive vals=faster speeding up)")
+    
+  print(g)
+```
+
+
+# RT effects WITHIN-PATCH
+
+The first trial is very slow so I removed it - the slopes might be too influenced by this. 
+I also removed trials after 20 since there were very few of them
+```{r}
+data2 <- data[data$patch_actions_taken<21 & data$patch_actions_taken>1,]
+glm1.sl.1 <- glmmTMB::glmmTMB(data=data2, RT ~ decay_fac*travel_time_lvl*group*decision + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+glm1.sl.2 <- glmmTMB::glmmTMB(data=data2, RT ~ decay_fac*travel_time_lvl*group*decision*patch_actions_taken + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+performance::compare_performance( glm1.sl.1, glm1.sl.2)#
+
+```
+
+```{r}
+car::Anova(glm1.sl.2)
+```
+
+### Speeding up by group within patch
+
+Actually it seems that within patch group1 starts fast but slows down over time to match group 2
+```{r}
+em <- emtrends(glm1.sl.2, pairwise ~ group , var = "patch_actions_taken", adjust=adjustment_method)
+em
+
+df <- data2 %>% 
+  group_by(id, group, patch_actions_taken) %>% 
+  summarise_at(c( "logRT"), mean)
+
+g <- ggplot(aes(y = logRT, x = patch_actions_taken, fill=interaction(group,patch_actions_taken)), data = df) +
+  geom_point(alpha=0.2, aes(color=group), show.legend = FALSE) +
+  geom_boxplot( width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=FALSE)   + 
+ #geom_smooth(aes(x = remaining_time, y=logRT), inherit.aes = FALSE, method = lm, formula = y ~ x, se = TRUE, legend=FALSE) +
+
+  scale_fill_manual(values = rep(c("maroon4", "dodgerblue"), 40))  + 
+  scale_color_manual(values = rep(c("maroon4","dodgerblue"), 40))  
+g
+```
+```{r fig.width=5, fig.height=7}
+df <- data2 %>% 
+  group_by(id, group, patch_actions_taken) %>% 
+  summarise_at(c("logRT"), mean)
+
+library(ggplot2)
+g <- ggplot(aes(y = logRT, x = patch_actions_taken, color=group), data = df) +
+  geom_point(alpha=0.2) +
+    geom_smooth(method = 'lm', se = TRUE)  + 
+  scale_color_manual(values = rep(c("maroon4","dodgerblue"), 20))  
+  #ggtitle("F1 ~ TF1 * wave * Deaths ") 
+g
+```
+# Predicting choices
+
+What determines the decision to leave 
+- condition (travel time, decay)
+- time in patch 
+- reward accumulated in patch 
+- remaining overall time
+- and all these interaction with group
+
+```{r}
+correlation_results <- data %>%
+  group_by(id) %>%
+  summarise(correlation = cor(cum_reward_patch, patch_time, use = "complete.obs"))
+hist(correlation_results$correlation)
+```
+
+```{r}
+log.m <- glmmTMB::glmmTMB(data=data, formula=decision_type ~ group*travel_time_lvl + group*decay_lvl + remaining_time*group + (1|id), family=binomial(link = "logit"))
+log.m2 <- glmmTMB::glmmTMB(data=data, formula=decision_type ~ group*travel_time_lvl + group*decay_lvl + group*cum_reward_patch + (1|id), family=binomial(link = "logit"))
+log.m3 <- glmmTMB::glmmTMB(data=data, formula=decision_type ~ group*travel_time_lvl + group*decay_lvl + patch_time*group + (1|id), family=binomial(link = "logit"))
+
+log.all <- glmmTMB::glmmTMB(data=data, formula=decision_type ~ group*travel_time_lvl + group*decay_lvl + remaining_time*group + patch_time*group + group*cum_reward_patch + (1|id), family=binomial(link = "logit"))
+car::Anova(log.all)
+
+summary(log.all)
+#car::Anova(log.m2)
+
+
+
+```
+
+```{r  fig.width=7, fig.height=5}
+em <- emmeans(log.all, pairwise ~ group * decay_lvl, adjust=adjustment_method)
+em
+
+df = data %>%
+  group_by(id, group, decay_lvl) %>%
+  summarise_at(c("decision_type"), mean, na.rm = TRUE) 
+df$log_decision_type <- log(df$decision_type)
+
+g <- ggplot(data = df, aes(y = log_decision_type, fill = interaction(group, decay_lvl), x=decay_lvl)) +
+  geom_point(aes(color = group), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = rep(c("darkgreen", "blue"),2)) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = rep(c("darkgreen", "blue"),2)) 
+g
+```
+
+## Speeding up within patch 
+```{r}
+car::Anova(glm3.sl.1)
+
+em <- emtrends(glm3.sl.1, pairwise ~ decay_fac*group , var = "patch_time", adjust=adjustment_method)
+em
+sl<-modelbased::estimate_slopes(glm3.sl.1, trend = "patch_time", at=c("decay_fac", "group"), ci = 0.95)
+plot(sl)
+#group:patch_time:blk_number                            29.0687  1  6.985e-08 ***
+
+em <- emtrends(glm3.sl.1, pairwise ~ group | decay_fac*travel_time_lvl , var = "patch_time", adjust=adjustment_method)
+em
+sl2<-modelbased::estimate_slopes(glm3.sl.1, trend = "patch_time", at=c("decay_fac", "travel_time_lvl", "group"), ci = 0.95)
+plot(sl2)
+```

@@ -1,0 +1,1165 @@
+---
+title: "Behavioural analysis: Only leaving trial"
+author: "Ondrej Zika and Sam Hall-McMaster"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Preparatory stuff
+```{r}
+library(here)
+here::i_am(".ed-foraging-root")
+renv::restore(here::here())
+
+renv::load(here::here())
+ 
+# renv::snapshot()
+
+required_packages = c("glmmTMB", "car", "parameters", "see", "dplyr", "lmerTest", "effectsize", "emmeans", "ggplot2", "lme4", "tidyr", "kableExtra")
+invisible(lapply(required_packages, require, character.only = TRUE))
+
+#here::i_am(".hidden_root_foraging")
+adjustment_method = "holm"
+```
+## Load data and merge with questionnaires
+
+```{r}
+data <- read.csv(here::here( 'anon-data', 'task_data', 'leaving_time_data.csv'))
+data$log_patch_actions_taken <- log(data$patch_actions_taken)
+
+rew <- read.csv(here::here( 'anon-data', 'task_data', 'rewards_data.csv'))
+rew$total_rewards <- rew$patch_reward_recieved
+data = merge(data, rew, by=c("id","travel_time_lvl", "decay_lvl")) # NA's match
+
+## add questionnaires data 
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', 'anonymized_processed_questonnaire_data.csv'))
+qs$id <- qs$PROLIFICID
+qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou",  "oci")]
+data = merge(data, qs, by=c("id")) # NA's match
+
+# add factor scores
+fa.scores <- read.csv(here::here( 'anon-data', 'questionnaires', 'factor_scores.csv'))
+data = merge(data, fa.scores, by=c("id")) # NA's match
+```
+
+**Notes**
+# Demographics - formal ED diagnosis 
+
+```{r}
+df2 <- data %>%
+  group_by(id, group, diagnosis) %>%
+  summarise(
+    gender = mean(gender, na.rm = TRUE)
+  )
+
+
+result <- df2 %>%
+  group_by(diagnosis, group) %>%
+  count() %>%
+  ungroup()
+
+print(result)
+
+```
+
+## Survey duration
+```{r}
+df2 <- data %>%
+  group_by(id, ) %>%
+  summarise(
+    duration = mean(survey_duration, na.rm = TRUE)
+  )
+
+hist(df2$duration)
+mean(df2$duration)
+sd(df2$duration)
+
+```
+# Analysis I: Patch actions taken
+This section runs analyses on the amount of actions taken before leaving 
+
+## Basic descriptive plots
+
+### travel time 
+```{r  fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, travel_time_lvl) %>%
+  summarise_at(c("patch_actions_taken"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = patch_actions_taken, fill = travel_time_lvl, x=travel_time_lvl)) +
+  geom_point(aes(color = travel_time_lvl), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "blue", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "blue", "blue", "lightblue")) 
+g
+
+df2 <- df %>%
+  group_by(travel_time_lvl) %>%
+  summarise(
+    mean = mean(patch_actions_taken, na.rm = TRUE),
+    sd = sd(patch_actions_taken, na.rm = TRUE)
+  )
+print(df2)
+```
+### travel time 
+```{r  fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, decay_fac) %>%
+  summarise_at(c("patch_actions_taken"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = patch_actions_taken, fill = decay_fac, x=decay_fac)) +
+  geom_point(aes(color = decay_fac), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "blue", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "blue", "blue", "lightblue")) 
+g
+
+df2 <- df %>%
+  group_by(decay_fac) %>%
+  summarise(
+    mean = mean(patch_actions_taken, na.rm = TRUE),
+    sd = sd(patch_actions_taken, na.rm = TRUE)
+  )
+print(df2)
+```
+
+### travel time x reward decay
+```{r}
+df = data %>%
+  group_by(id, decay_fac, travel_time_lvl) %>%
+  summarise_at(c("patch_actions_taken"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = patch_actions_taken, fill = interaction(decay_fac, travel_time_lvl), x=travel_time_lvl)) +
+  geom_point(aes(color = interaction(decay_fac, travel_time_lvl)), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) 
+g
+
+df2 <- df %>%
+  group_by(decay_fac, travel_time_lvl) %>%
+  summarise(
+    mean = mean(patch_actions_taken, na.rm = TRUE),
+    sd = sd(patch_actions_taken, na.rm = TRUE)
+  )
+print(df2)
+```
+
+### group
+```{r, fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, group) %>%
+  summarise_at(c("patch_actions_taken"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = patch_actions_taken, fill = group, x=group)) +
+  geom_point(aes(color = group),  position=position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  scale_color_manual(values = c("maroon4", "dodgerblue")) 
+g
+
+df2 <- df %>%
+  group_by(group) %>%
+  summarise(
+    mean = mean(patch_actions_taken, na.rm = TRUE),
+    sd = sd(patch_actions_taken, na.rm = TRUE)
+  )
+print(df2)
+```
+## Statstical models
+### Model selection
+
+To select the correct model I fit:
+1/ basic linear mixed effects model
+2/ Generalised LMM with Poisson likelihood (suitable for ordered integer responses)
+3/ basic LMM with random slopes (accounting for within subject variation)
+4/ Poisson model with random slopes
+5/ Poisson model only with random slope for travel time
+6/ Poisson model only with random slope for decay
+
+Model **4/** seems to have lowest AIC/BIC (i.e. full model with all random slopes)
+
+
+```{r}
+linkfunc= "log"
+
+m1 <- lme4::lmer(data=data, formula=patch_actions_taken ~ decay_fac*travel_time_lvl*group + (1|id))
+pm1 <- glmmTMB::glmmTMB(data=data, formula=patch_actions_taken ~ decay_fac*travel_time_lvl*group + (1|id), family=poisson(link=linkfunc))
+
+
+
+m1.sl <- lme4::lmer(data=data, formula=patch_actions_taken ~ decay_fac*travel_time_lvl*group + (1+decay_fac+travel_time_lvl|id))
+pm1.sl <- glmmTMB::glmmTMB(data=data, formula=patch_actions_taken ~ decay_fac*travel_time_lvl*group + (1+decay_fac+travel_time_lvl|id), family=poisson(link=linkfunc))
+pm1.sltt <- glmmTMB::glmmTMB(data=data, formula=patch_actions_taken ~ decay_fac*travel_time_lvl*group + (1+travel_time_lvl|id), family=poisson(link=linkfunc))
+pm1.slde <- glmmTMB::glmmTMB(data=data, formula=patch_actions_taken ~ decay_fac*travel_time_lvl*group + (1+decay_fac|id), family=poisson(link=linkfunc))
+
+performance::compare_performance(m1,pm1, m1.sl, pm1.sl, pm1.sltt, pm1.slde)
+
+```
+
+### Use winning model to analyze data
+```{r}
+
+car::Anova(pm1.sl)
+
+data$predicted_patch_actions_taken <- predict(pm1.sl)
+
+```
+### understand three-way interaction between decay*travel_time*group
+It's unclear what the three-way interaction picks up on, probably difference in two two-way interactions
+```{r}
+em <- emmeans(pm1.sl, pairwise ~ group | travel_time_lvl*decay_fac, adjust=adjustment_method)
+em
+
+df = data %>%
+  group_by(id, travel_time_lvl, decay_fac, group) %>%
+  summarise_at(c("patch_actions_taken", "predicted_patch_actions_taken"), mean, na.rm = TRUE)
+
+
+g <- ggplot(data = df, aes(y = patch_actions_taken, x = group, fill=group)) +
+  geom_point(aes(color = group),  position=position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.4, show.legend=TRUE)   + 
+  scale_color_manual(values = c("maroon4", "dodgerblue")) + 
+  facet_grid(cols = vars(travel_time_lvl), rows=vars(decay_fac))
+g
+
+```
+
+## Remaining time analysis
+Including remaining time in the model improves fit fit
+```{r}
+linkfunc ="log"
+pm1.sl.2 <- glmmTMB::glmmTMB(data=data, formula=patch_actions_taken ~ decay_fac*travel_time_lvl*group*remaining_time + (1+decay_fac+travel_time_lvl|id), family=poisson(link=linkfunc))
+performance::compare_performance(pm1.sl, pm1.sl.2)
+
+car::Anova(pm1.sl.2)
+```
+### Interaction of travel time and remaining time
+
+In short travel time, the number of action decreases as the end is approaching
+```{r}
+linkfunc= "log"
+data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time), q = seq(0,1,0.1))
+
+df <- data %>% 
+  group_by(id, group, rem_time_q,travel_time_lvl) %>% 
+  summarise_at(c( "patch_actions_taken"), mean)
+
+g <- ggplot(aes(y = patch_actions_taken, x = rem_time_q, fill=interaction(rem_time_q, travel_time_lvl)), data = df) +
+  geom_point(alpha=0.2, aes(color=travel_time_lvl), show.legend = FALSE) +
+  geom_boxplot(aes(fill=travel_time_lvl, x=rem_time_q, y=patch_actions_taken), inherit.aes = FALSE, width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=FALSE)   + 
+  scale_fill_manual(values = rep(c("maroon4", "dodgerblue"), 20))  + 
+  scale_color_manual(values = rep(c("maroon4", "dodgerblue"), 20))  
+g
+```
+
+## Patch actions - factors instead of group
+
+```{r}
+pm1.sl.g <- glmmTMB::glmmTMB(data=data, formula=patch_actions_taken ~ decay_fac*travel_time_lvl*group*remaining_time + (1+decay_fac+travel_time_lvl|id), family=poisson(link=linkfunc))
+pm1.sl.f1 <- glmmTMB::glmmTMB(data=data, formula=patch_actions_taken ~ decay_fac*travel_time_lvl*F1*remaining_time + (1+decay_fac+travel_time_lvl|id), family=poisson(link=linkfunc))
+pm1.sl.f2 <- glmmTMB::glmmTMB(data=data, formula=patch_actions_taken ~ decay_fac*travel_time_lvl*F2*remaining_time + (1+decay_fac+travel_time_lvl|id), family=poisson(link=linkfunc))
+pm1.sl.f3 <- glmmTMB::glmmTMB(data=data, formula=patch_actions_taken ~ decay_fac*travel_time_lvl*F3*remaining_time + (1+decay_fac+travel_time_lvl|id), family=poisson(link=linkfunc))
+
+
+performance::compare_performance(pm1.sl.g, pm1.sl.f1, pm1.sl.f2, pm1.sl.f3)
+
+```
+```{r}
+car::Anova(pm1.sl.g)
+car::Anova(pm1.sl.f1)
+car::Anova(pm1.sl.f2)
+car::Anova(pm1.sl.f3)
+
+```
+
+# Analysis II: Leaving time
+This section runs analyses on time spent in patch
+
+## Basic descriptive plots
+
+### travel time 
+```{r  fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, travel_time_lvl) %>%
+  summarise_at(c("patch_time"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = patch_time, fill = travel_time_lvl, x=travel_time_lvl)) +
+  geom_point(aes(color = travel_time_lvl), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "blue", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "blue", "blue", "lightblue")) 
+g
+
+df2 <- df %>%
+  group_by(travel_time_lvl) %>%
+  summarise(
+    mean = mean(patch_time, na.rm = TRUE),
+    sd = sd(patch_time, na.rm = TRUE)
+  )
+print(df2)
+```
+### decay
+```{r  fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, decay_fac) %>%
+  summarise_at(c("patch_time"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = patch_time, fill = decay_fac, x=decay_fac)) +
+  geom_point(aes(color = decay_fac), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "blue", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "blue", "blue", "lightblue")) 
+g
+
+df2 <- df %>%
+  group_by(decay_fac) %>%
+  summarise(
+    mean = mean(patch_time, na.rm = TRUE),
+    sd = sd(patch_time, na.rm = TRUE)
+  )
+print(df2)
+```
+
+### travel time x reward decay
+```{r}
+df = data %>%
+  group_by(id, decay_fac, travel_time_lvl) %>%
+  summarise_at(c("patch_time"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = patch_time, fill = interaction(decay_fac, travel_time_lvl), x=travel_time_lvl)) +
+  geom_point(aes(color = interaction(decay_fac, travel_time_lvl)), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) 
+g
+
+df2 <- df %>%
+  group_by(decay_fac, travel_time_lvl) %>%
+  summarise(
+    mean = mean(patch_time, na.rm = TRUE),
+    sd = sd(patch_time, na.rm = TRUE)
+  )
+print(df2)
+```
+
+### group
+
+Note more variability in group2
+
+```{r, fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, group) %>%
+  summarise_at(c("patch_time"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = patch_time, fill = group, x=group)) +
+  geom_point(aes(color = group),  position=position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  scale_color_manual(values = c("maroon4", "dodgerblue")) 
+g
+
+df2 <- df %>%
+  group_by(group) %>%
+  summarise(
+    mean = mean(patch_time, na.rm = TRUE),
+    sd = sd(patch_time, na.rm = TRUE)
+  )
+print(df2)
+```
+
+## Leaving time by group 
+```{r fig.width = 4, fig.height=6}
+
+df_long <- data %>%
+  group_by(id, group) %>%
+  summarise_at(c("patch_time"), mean, na.rm = TRUE) 
+
+df_summary <- df_long %>%
+  group_by(group) %>%
+  summarise(
+    mean_value = mean(patch_time),
+    se_value = sd(patch_time) / sqrt(n())
+  )
+
+# Create the bar plot with error bars
+ggplot(df_summary, aes(x = group, y = mean_value, fill = group)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black", width = 0.8, alpha=0.8) +
+  geom_errorbar(aes(ymin = mean_value - se_value, ymax = mean_value + se_value), 
+                position = position_dodge(0.9), width = 0.15) +
+  theme_minimal() +
+  labs(title = "",
+       x = "Group",
+       y = "Patch Time",
+       fill = "Group") +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) +
+  ylim(0, 25)
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggsave(
+  here::here("output", "patch_time_by_group.svg"), 
+  scale = 1,
+  width = 4,
+  height = 6,
+  units = c("in"),
+  dpi = 300)
+write.csv(df_long, here::here("output", "data_patch_time.csv"))
+```
+## Statistical model of leaving time
+Here, instead of Poisson GLM we use Gamma GLM which is more appropriate for continuous responses
+The model logic is the same as in the case of patch actions taken
+
+### Model selection
+```{r}
+data <- data[data$patch_time>=0,]
+# basic LMM
+m2 <- lme4::lmer(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*group + (1|id))
+
+# Gamma GLM 
+glm2 <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*group + (1|id), family=Gamma(link=linkfunc))
+
+# LMM with random slopes
+m2.sl <- lme4::lmer(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*group + (1 + decay_fac + travel_time_lvl|id))
+
+# Gamma GLM with random slopes
+glm2.sl <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*group + (1+ decay_fac + travel_time_lvl|id), family=Gamma(link=linkfunc))
+
+# without three way interaction 
+glm2.sl.2 <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl + travel_time_lvl*group + decay_fac*group + (1+ decay_fac + travel_time_lvl|id), family=Gamma(link=linkfunc))
+
+
+glm2.sl.trvl <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*group + (1+  travel_time_lvl|id), family=Gamma(link=linkfunc))
+
+glm2.sl.dec <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*group + (1+ decay_fac |id), family=Gamma(link=linkfunc))
+
+
+performance::compare_performance(m2,glm2, m2.sl, glm2.sl, glm2.sl.2, glm2.sl.trvl, glm2.sl.dec)
+```
+
+### Analyze winning model
+Very similar to actions taken there is a three way interaction decay*traveltime*group 
+```{r}
+car::Anova(glm2.sl)
+```
+
+### Understadn three way interaction 
+Here, we actually have a significant three-way interaction, it's driven by group difference in long travel time & slow decay
+Group 1 takes significantly longer in this condition
+```{r}
+em <- emmeans(glm2.sl, pairwise ~ group | travel_time_lvl*decay_fac, adjust=adjustment_method)
+em
+
+df = data %>%
+  group_by(id, travel_time_lvl, decay_fac, group) %>%
+  summarise_at(c("patch_time"), mean, na.rm = TRUE)
+
+
+g <- ggplot(data = df, aes(y = patch_time, x = group, fill=group)) +
+  geom_point(aes(color = group),  position=position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.4, show.legend=TRUE)   + 
+  scale_color_manual(values = c("maroon4", "dodgerblue")) + 
+  facet_grid(cols = vars(travel_time_lvl), rows=vars(decay_fac))
+g
+
+```
+
+### Analyze winning model without three-way interaction
+Very similar to actions taken there is a three way interaction decay*traveltime*group 
+```{r}
+car::Anova(glm2.sl.2)
+```
+
+## Remaining time
+Adding remaining also improves fit
+```{r}
+linkfunc ="log"
+glm2.sl.2 <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*group*remaining_time + (1+decay_fac+travel_time_lvl|id), family=Gamma(link=linkfunc))
+performance::compare_performance(glm2.sl, glm2.sl.2)
+
+car::Anova(glm2.sl.2)
+```
+
+### remaining time by group interaction
+
+The trend in group 1 is faster (steeper) than in group2, it's not super clear from the plots though
+```{r, fig.width=4, fig.height=5}
+em <- emtrends(glm2.sl.2, pairwise ~ group , var = "remaining_time", adjust=adjustment_method)
+em
+
+
+
+data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time), q = seq(0,1,0.1))
+
+df <- data %>% 
+  group_by(id, group, rem_time_q) %>% 
+  summarise_at(c( "patch_time"), mean)
+
+g <- ggplot(aes(y = patch_time, x = rem_time_q, fill=interaction(rem_time_q, group)), data = df) +
+  geom_point(alpha=0.2, aes(color=group), show.legend = FALSE) +
+  geom_boxplot(aes(fill=group, x=rem_time_q, y=patch_time), inherit.aes = FALSE, width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=FALSE)   + 
+  scale_fill_manual(values = rep(c("maroon4", "dodgerblue"), 20))  + 
+  scale_color_manual(values = rep(c("maroon4", "dodgerblue"), 20))  
+g
+
+# alternative visualisation
+#extract slope perparticipant 
+tlm <- lme4::lmer(data=data, formula=patch_time ~  (1 + remaining_time|id))
+slopes <- data.frame(ranef(tlm))
+slopes <- slopes[slopes$term %in% "remaining_time",]
+slopes$id <- slopes$grp
+slopes$slope <- slopes$condval
+df <- data %>% 
+  group_by(id, group) %>% 
+  summarise_at(c( "patch_time"), mean)
+df <- merge(df, slopes[,c("id", "slope")], by="id")
+
+g <- ggplot(data = df, aes(y = slope, fill = group, x=group)) +
+  geom_point(aes(color = group),  position=position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  scale_color_manual(values = c("maroon4", "dodgerblue")) 
+g
+```
+
+## Patch time - factors instead of group
+
+This analysis investigates to what degree is the "speeding up" effect specific to ED
+Assigned group seem to explain the effect best, F1 (ED) also interacts with group, bt F2 and F3 don't
+```{r}
+
+pm2.sl.g <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*group*remaining_time + (1+decay_fac+travel_time_lvl|id), family=Gamma(link=linkfunc))
+pm2.sl.f1 <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*F1*remaining_time + (1+decay_fac+travel_time_lvl|id), family=Gamma(link=linkfunc))
+pm2.sl.f2 <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*F2*remaining_time + (1+decay_fac+travel_time_lvl|id), family=Gamma(link=linkfunc))
+pm2.sl.f3 <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*F3*remaining_time + (1+decay_fac+travel_time_lvl|id), family=Gamma(link=linkfunc))
+
+
+performance::compare_performance(pm2.sl.g, pm2.sl.f1, pm2.sl.f2, pm2.sl.f3)
+
+```
+```{r}
+car::Anova(pm2.sl.g)
+car::Anova(pm2.sl.f1)
+car::Anova(pm2.sl.f2)
+car::Anova(pm2.sl.f3)
+
+```
+## Analyzing leaving time z-scored per condition 
+
+Z-scoring the data does not help in any way
+
+```{r}
+
+df <- data %>%
+  group_by(decay_fac, travel_time_lvl) %>%
+  mutate(
+    mean_patch_time = mean(patch_time, na.rm = TRUE),
+    sd_patch_time = sd(patch_time, na.rm = TRUE),
+    patch_time_zscore = (patch_time - mean_patch_time) / sd_patch_time
+  ) %>%
+  select(-mean_patch_time, -sd_patch_time)  # Remove intermediate columns if not needed
+
+# Display the resulting data frame
+print(df)
+
+# LMM with random slopes
+m2.sl <- lme4::lmer(data=df, formula=patch_time_zscore ~ decay_fac*travel_time_lvl*group + (1 + decay_fac + travel_time_lvl|id))
+
+car::Anova(m2.sl)
+
+em <- emmeans(m2.sl, pairwise ~ group | travel_time_lvl*decay_fac, adjust=adjustment_method)
+em
+
+df = df %>%
+  group_by(id, travel_time_lvl, decay_fac, group) %>%
+  summarise_at(c("patch_time_zscore"), mean, na.rm = TRUE)
+
+
+g <- ggplot(data = df, aes(y = patch_time_zscore, x = group, fill=group)) +
+  geom_point(aes(color = group),  position=position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.4, show.legend=TRUE)   + 
+  scale_color_manual(values = c("maroon4", "dodgerblue")) + 
+  facet_grid(cols = vars(travel_time_lvl), rows=vars(decay_fac))
+g
+
+
+```
+
+# Analysis III: Remaining reward
+Reward at the time of leaving 
+
+## Basic descriptive plots
+
+### travel time 
+```{r  fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, travel_time_lvl) %>%
+  summarise_at(c("reward_remaining"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = reward_remaining, fill = travel_time_lvl, x=travel_time_lvl)) +
+  geom_point(aes(color = travel_time_lvl), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "blue", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "blue", "blue", "lightblue")) 
+g
+
+df2 <- df %>%
+  group_by( travel_time_lvl) %>%
+  summarise(
+    mean = mean(reward_remaining, na.rm = TRUE),
+    sd = sd(reward_remaining, na.rm = TRUE)
+  )
+print(df2)
+```
+### decay
+```{r  fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, decay_fac) %>%
+  summarise_at(c("reward_remaining"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = reward_remaining, fill = decay_fac, x=decay_fac)) +
+  geom_point(aes(color = decay_fac), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "blue", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "blue", "blue", "lightblue")) 
+g
+
+df2 <- df %>%
+  group_by( decay_fac) %>%
+  summarise(
+    mean = mean(reward_remaining, na.rm = TRUE),
+    sd = sd(reward_remaining, na.rm = TRUE)
+  )
+print(df2)
+```
+
+### travel time x reward decay
+```{r}
+df = data %>%
+  group_by(id, decay_fac, travel_time_lvl) %>%
+  summarise_at(c("reward_remaining"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = reward_remaining, fill = interaction(decay_fac, travel_time_lvl), x=travel_time_lvl)) +
+  geom_point(aes(color = interaction(decay_fac, travel_time_lvl)), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) 
+g
+
+df2 <- df %>%
+  group_by( decay_fac, travel_time_lvl) %>%
+  summarise(
+    mean = mean(reward_remaining, na.rm = TRUE),
+    sd = sd(reward_remaining, na.rm = TRUE)
+  )
+print(df2)
+```
+
+### group
+```{r, fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, group) %>%
+  summarise_at(c("reward_remaining"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = reward_remaining, fill = group, x=group)) +
+  geom_point(aes(color = group),  position=position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  scale_color_manual(values = c("maroon4", "dodgerblue")) 
+g
+
+df2 <- df %>%
+  group_by( group) %>%
+  summarise(
+    mean = mean(reward_remaining, na.rm = TRUE),
+    sd = sd(reward_remaining, na.rm = TRUE)
+  )
+print(df2)
+```
+
+## Leaving time by group 
+```{r fig.width = 4, fig.height=6}
+
+df_long <- data %>%
+  group_by(id, group) %>%
+  summarise_at(c("reward_remaining"), mean, na.rm = TRUE) 
+
+df_summary <- df_long %>%
+  group_by(group) %>%
+  summarise(
+    mean_value = mean(reward_remaining),
+    se_value = sd(reward_remaining) / sqrt(n())
+  )
+
+# Create the bar plot with error bars
+g<-ggplot(df_summary, aes(x = group, y = mean_value, fill = group)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = "black", width = 0.8, alpha=0.8) +
+  geom_errorbar(aes(ymin = mean_value - se_value, ymax = mean_value + se_value), 
+                position = position_dodge(0.9), width = 0.15) +
+  theme_minimal() +
+  labs(title = "",
+       x = "Group",
+       y = "reward_remaining",
+       fill = "Group") +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) +
+  ylim(0, 60)
+print(g)
+
+ggsave(
+  here::here("output", "reward_rem_by_group.svg"), 
+  scale = 1,
+  width = 4,
+  height = 6,
+  units = c("in"),
+  dpi = 300)
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1))
+write.csv(df_long, here::here("output", "data_reward.csv"))
+```
+
+## Statistical model of remaining reward
+Here, the data a very Normal, so I stick with basic LMM with Gaussian likelihood
+
+### Model selection
+```{r}
+# basic LMM
+m3 <- lme4::lmer(data=data, formula=reward_remaining ~ decay_fac*travel_time_lvl*group + (1|id))
+
+# LMM with random slopes
+m3.sl <- lme4::lmer(data=data, formula=reward_remaining ~ decay_fac*travel_time_lvl*group + (1 + decay_fac + travel_time_lvl|id))
+
+m3.sl.tt <- lme4::lmer(data=data, formula=reward_remaining ~ decay_fac*travel_time_lvl*group + (1 +  travel_time_lvl|id))
+
+m3.sl.dc <- lme4::lmer(data=data, formula=reward_remaining ~ decay_fac*travel_time_lvl*group + (1 + decay_fac |id))
+
+
+
+performance::compare_performance(m3,m3.sl, m3.sl.tt, m3.sl.dc)
+```
+### statsitical test on winning model
+Again, the same story! 
+
+```{r}
+car::Anova(m3.sl)
+```
+
+### Understadn three way interaction 
+Again, we have a significant three-way interaction, this time no clear stats story, though the tendency is the same as in the previous two analyses
+```{r}
+em <- emmeans(m3.sl, pairwise ~ group | travel_time_lvl*decay_fac, adjust=adjustment_method)
+em
+
+df = data %>%
+  group_by(id, travel_time_lvl, decay_fac, group) %>%
+  summarise_at(c("reward_remaining"), mean, na.rm = TRUE)
+
+
+g <- ggplot(data = df, aes(y = reward_remaining, x = group, fill=group)) +
+  geom_point(aes(color = group),  position=position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.4, show.legend=TRUE)   + 
+  scale_color_manual(values = c("maroon4", "dodgerblue")) + 
+  facet_grid(cols = vars(travel_time_lvl), rows=vars(decay_fac))
+g
+
+```
+
+## Remaining time
+Adding remaining also improves fit
+```{r}
+# LMM with random slopes
+m3.sl.2 <- lme4::lmer(data=data, formula=reward_remaining ~ decay_fac*travel_time_lvl*group*remaining_time + (1 + decay_fac + travel_time_lvl|id))
+
+performance::compare_performance(m3.sl, m3.sl.2)
+
+car::Anova(m3.sl.2)
+```
+
+# Analysis IV: reaction time
+RT at the decision to leave
+Using log RTs for visualization
+
+## Basic descriptives 
+
+### travel time 
+```{r  fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, travel_time_lvl) %>%
+  summarise_at(c("logRT"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = logRT, fill = travel_time_lvl, x=travel_time_lvl)) +
+  geom_point(aes(color = travel_time_lvl), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "blue", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "blue", "blue", "lightblue")) 
+g
+
+
+df = data %>%
+  group_by(id, travel_time_lvl) %>%
+  summarise_at(c("RT"), mean, na.rm = TRUE)
+df2 <- df %>%
+  group_by( travel_time_lvl) %>%
+  summarise(
+    mean = mean(RT, na.rm = TRUE),
+    sd = sd(RT, na.rm = TRUE)
+  )
+print(df2)
+```
+### decay
+```{r  fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, decay_fac) %>%
+  summarise_at(c("logRT"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = logRT, fill = decay_fac, x=decay_fac)) +
+  geom_point(aes(color = decay_fac), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "blue", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "blue", "blue", "lightblue")) 
+g
+
+df = data %>%
+  group_by(id, decay_fac) %>%
+  summarise_at(c("RT"), mean, na.rm = TRUE)
+df2 <- df %>%
+  group_by( decay_fac) %>%
+  summarise(
+    mean = mean(RT, na.rm = TRUE),
+    sd = sd(RT, na.rm = TRUE)
+  )
+print(df2)
+```
+
+### travel time x reward decay
+```{r}
+df = data %>%
+  group_by(id, decay_fac, travel_time_lvl) %>%
+  summarise_at(c("logRT"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = logRT, fill = interaction(decay_fac, travel_time_lvl), x=travel_time_lvl)) +
+  geom_point(aes(color = interaction(decay_fac, travel_time_lvl)), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) 
+g
+
+df = data %>%
+  group_by(id, decay_fac,travel_time_lvl) %>%
+  summarise_at(c("RT"), mean, na.rm = TRUE)
+df2 <- df %>%
+  group_by( decay_fac, travel_time_lvl) %>%
+  summarise(
+    mean = mean(RT, na.rm = TRUE),
+    sd = sd(RT, na.rm = TRUE)
+  )
+print(df2)
+```
+
+### group
+```{r, fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, group) %>%
+  summarise_at(c("RT"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = RT, fill = group, x=group)) +
+  geom_point(aes(color = group),  position=position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  scale_color_manual(values = c("maroon4", "dodgerblue")) 
+g
+
+df = data %>%
+  group_by(id, group) %>%
+  summarise_at(c("RT"), mean, na.rm = TRUE)
+df2 <- df %>%
+  group_by( group) %>%
+  summarise(
+    mean = mean(RT, na.rm = TRUE),
+    sd = sd(RT, na.rm = TRUE)
+  )
+print(df2)
+```
+
+
+## Statistical analysis
+
+Using Gamma GLM as appropriate fro RTs
+Notice how badly basic LMM does here compared to Gamma GLMs 
+Gamma GLM with full slopes fits best 
+### Model selection
+```{r}
+data<- data[data$RT!=0,]  
+linkfunc = "log"
+
+m4 <- lme4::lmer(data=data, formula= RT ~ decay_lvl*travel_time_lvl*group + (1|id))
+glm4 <- glmmTMB::glmmTMB(data=data, formula= RT ~ decay_lvl*travel_time_lvl*group +(1|id), family=Gamma(link = linkfunc))
+
+
+m4.sl <- lme4::lmer(data=data, formula= RT ~ decay_lvl*travel_time_lvl*group + (1+travel_time_lvl+decay_lvl|id))
+glm4.sl <- glmmTMB::glmmTMB(data=data, formula= RT ~ decay_lvl*travel_time_lvl*group + (1+travel_time_lvl+decay_lvl|id), family=Gamma(link = linkfunc))
+
+glm4.sl.dc <- glmmTMB::glmmTMB(data=data, formula= RT ~ decay_lvl*travel_time_lvl*group + (1+decay_lvl|id), family=Gamma(link = linkfunc))
+
+glm4.sl.tt <- glmmTMB::glmmTMB(data=data, formula= RT ~ decay_lvl*travel_time_lvl*group + (1+travel_time_lvl|id), family=Gamma(link = linkfunc))
+
+performance::compare_performance(m4,m4.sl, glm4, glm4.sl, glm4.sl.tt, glm4.sl.dc)
+```
+
+### statistical analysis
+RTs are only impacted by travel time condition
+Group 1 seems a little faster but not significant
+```{r}
+car::Anova(glm4.sl)
+```
+
+## Remaining time
+Adding remaining also improves fit
+```{r}
+# LMM with random slopes
+glm4.sl.2 <- glmmTMB::glmmTMB(data=data, formula= RT ~ decay_lvl*travel_time_lvl*group*remaining_time + (1+travel_time_lvl+decay_lvl|id), family=Gamma(link = linkfunc))
+
+performance::compare_performance(glm4.sl, glm4.sl.2)
+
+car::Anova(glm4.sl.2)
+```
+### understadning remaining time interaction iwth group
+Keeping in mind that this is ONLY the leaving trial
+There is a trending interaction logRT ~ group*remaining time - group1 is more sensitive to approaching end
+```{r, fig.width=4, fig.height=5}
+em <- emtrends(glm4.sl.2, pairwise ~ group , var = "remaining_time", adjust=adjustment_method)
+em
+
+
+
+data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time), q = seq(0,1,0.1))
+
+df <- data %>% 
+  group_by(id, group, rem_time_q) %>% 
+  summarise_at(c( "logRT"), mean)
+
+g <- ggplot(aes(y = logRT, x = rem_time_q, fill=interaction(rem_time_q, group)), data = df) +
+  geom_point(alpha=0.2, aes(color=group), show.legend = FALSE) +
+  geom_boxplot(aes(fill=group, x=rem_time_q, y=logRT), inherit.aes = FALSE, width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=FALSE)   + 
+  scale_fill_manual(values = rep(c("maroon4", "dodgerblue"), 20))  + 
+  scale_color_manual(values = rep(c("maroon4", "dodgerblue"), 20))  
+g
+
+# alternative visualisation
+#extract slope perparticipant 
+tlm <- lme4::lmer(data=data, formula=logRT ~  (1 + remaining_time|id))
+slopes <- data.frame(ranef(tlm))
+slopes <- slopes[slopes$term %in% "remaining_time",]
+slopes$id <- slopes$grp
+slopes$slope <- slopes$condval
+df <- data %>% 
+  group_by(id, group) %>% 
+  summarise_at(c( "logRT"), mean)
+df <- merge(df, slopes[,c("id", "slope")], by="id")
+
+g <- ggplot(data = df, aes(y = slope, fill = group, x=group)) +
+  geom_point(aes(color = group),  position=position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  scale_color_manual(values = c("maroon4", "dodgerblue")) 
+g
+
+t.test(formula=slope~group, data=df)
+```
+# Analysis V: Gained reward 
+Here we look at whether any specific group gained more reward, as a measure of task performance
+
+## Basic descriptives 
+```{r}
+df = data %>%
+  group_by(group,travel_time_lvl, decay_fac) %>%
+  summarise_at(c("total_rewards"), mean, na.rm = TRUE)
+df2 <- df %>%
+  pivot_wider(names_from = group, values_from = total_rewards)
+df2
+
+melted_data <- df2 %>%
+  pivot_longer(cols = starts_with("group"), names_to = "group", values_to = "total_rewards") %>%
+  filter(!is.na(total_rewards))
+
+# Plot the data
+ggplot(melted_data, aes(x = interaction(travel_time_lvl, decay_fac), y = total_rewards, fill = group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Travel Time Level and Decay Factor", y = "Total Rewards", fill = "Group", title = "Total Rewards by Group, Travel Time Level, and Decay Factor") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+pretty_table <- df2 %>%
+  kable(col.names = c("Travel Time Level", "Decay Factor", "Group 1", "Group 2"),
+        caption = "Total Rewards by Group, Travel Time Level, and Decay Factor",
+        format = "html") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
+  column_spec(1:4, bold = TRUE, border_right = TRUE) %>%
+  add_header_above(c(" ", " ", "Rewards" = 2)) %>%
+  save_kable(here::here("output", "rewards.png"))
+
+# Print the pretty table
+print(pretty_table)
+```
+
+
+### travel time 
+```{r  fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, travel_time_lvl) %>%
+  summarise_at(c("total_rewards"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = total_rewards, fill = travel_time_lvl, x=travel_time_lvl)) +
+  geom_point(aes(color = travel_time_lvl), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "blue", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "blue", "blue", "lightblue")) 
+g
+
+df2 <- df %>%
+  group_by( travel_time_lvl) %>%
+  summarise(
+    mean = mean(total_rewards, na.rm = TRUE),
+    sd = sd(total_rewards, na.rm = TRUE)
+  )
+print(df2)
+```
+### decay
+```{r  fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, decay_fac) %>%
+  summarise_at(c("total_rewards"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = total_rewards, fill = decay_fac, x=decay_fac)) +
+  geom_point(aes(color = decay_fac), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "blue", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "blue", "blue", "lightblue")) 
+g
+
+df2 <- df %>%
+  group_by( decay_fac) %>%
+  summarise(
+    mean = mean(total_rewards, na.rm = TRUE),
+    sd = sd(total_rewards, na.rm = TRUE)
+  )
+print(df2)
+```
+
+### travel time x reward decay
+```{r}
+df = data %>%
+  group_by(id, decay_fac, travel_time_lvl) %>%
+  summarise_at(c("total_rewards"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = total_rewards, fill = interaction(decay_fac, travel_time_lvl), x=travel_time_lvl)) +
+  geom_point(aes(color = interaction(decay_fac, travel_time_lvl)), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = c("darkgreen", "darkseagreen", "blue", "lightblue")) 
+g
+
+
+df2 <- df %>%
+  group_by( decay_fac, travel_time_lvl) %>%
+  summarise(
+    mean = mean(total_rewards, na.rm = TRUE),
+    sd = sd(total_rewards, na.rm = TRUE)
+  )
+print(df2)
+```
+
+### group
+```{r, fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, group) %>%
+  summarise_at(c("total_rewards"), mean, na.rm = TRUE)
+
+g <- ggplot(data = df, aes(y = total_rewards, fill = group, x=group)) +
+  geom_point(aes(color = group),  position=position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  scale_color_manual(values = c("maroon4", "dodgerblue")) 
+g
+
+df2 <- df %>%
+  group_by( group) %>%
+  summarise(
+    mean = mean(total_rewards, na.rm = TRUE),
+    sd = sd(total_rewards, na.rm = TRUE)
+  )
+print(df2)
+```
+## Statistical model
+
+Group 1 earns more reward but this is not statistically significant p=0.15
+```{r}
+df = data %>%
+  group_by(id, decay_fac, group, travel_time_lvl) %>%
+  summarise_at(c("total_rewards"), mean, na.rm = TRUE)
+m5 <- lme4::lmer(data=df, formula= total_rewards ~ decay_fac*travel_time_lvl*group + (1+travel_time_lvl+decay_fac|id))
+car::Anova(m5)
+
+```
+
+
+## Time spent in each episode within block
+```{r}
+data2 <- data[data$episode<12,]
+#data$episode_bloc <- gtools::quantcut(as.numeric(data$episode), q = seq(0,1,0.1))
+
+df = data2 %>%
+  group_by(id, episode, group) %>%
+  summarise_at(c("patch_time"), mean, na.rm = TRUE)
+df
+
+m<- lmerTest::lmer(data=data, patch_time~ episode*group + (1|id))
+car::Anova(m)
+g <- ggplot(data = df, aes(y = patch_time, x=episode, fill=interaction(episode, group))) +
+  #geom_point(aes(color = group),  position=position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  #scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
+  geom_boxplot( inherit.aes = TRUE, width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  scale_fill_manual(values = c(rep(c("maroon4"), 12), rep(c("dodgerblue"), 12)))
+g
+
+df2 <- df %>%
+  group_by( episode, group) %>%
+  summarise(
+    mean = mean(patch_time, na.rm = TRUE),
+    sd = sd(patch_time, na.rm = TRUE)
+  )
+print(df2)
+```
