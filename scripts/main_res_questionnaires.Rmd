@@ -1,5 +1,6 @@
 ---
 title: "Questionnaires and Factor analysis"
+author: "Ondrej Zika and Sam Hall-McMaster"
 output:
   html_document:
     df_print: paged

@@ -1,6 +1,6 @@
 ---
 title: "Behavioural analysis: All trials"
-author: "Ondrej Zika"
+author: "Ondrej Zika and Sam Hall-McMaster"
 date: "2024-06-12"
 output: html_document
 ---
@@ -1168,73 +1168,7 @@ anova(m)
 
 
 
-```{r}
-linkfunc="log"
-data$unique_episode <- paste0(toString(data$episode), paste0("bl", toString(data$blk_number)))
 
-smod <- glmmTMB::glmmTMB(data=data, RT ~ 1 + (1+remaining_time|id), family = Gamma(link=linkfunc))
-
-sl<-data.frame(ranef(smod)$cond$`id`)
-sl$rawvar <- rownames(sl)
-sl <- sl %>%
-  tidyr::separate(rawvar, into = c("id"), sep = ":")
-
-ep_rewards <- data %>% 
-  group_by(id, group, blk_number, episode) %>% 
-  summarise_at(c("reward"), sum, na.omit = TRUE)
-
-df = merge(sl, ep_rewards, by = c("id"))
-
-
-cdf <- df %>%
-  group_by(id,group) %>%
-  summarise(correlation = cor(reward, remaining_time, use = "complete.obs"))
-
-g <- ggplot(data = cdf, aes(y = correlation, x=group, fill=group)) +
-  geom_point(aes=aes(color=group), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
-                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
-  scale_fill_manual(values = c("maroon4", "dodgerblue")) + 
-  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
-  
-  scale_color_manual(values =  c("maroon4", "dodgerblue")) + 
-  ylab("Link between reward and speeding up effect")
-g
-
-#t.test(cdf$correlation, mu=0)
-
-
-## GLM 
-m <- lmer(data=df, reward~remaining_time*group + (1|id))
-car::Anova(m)
-
-### plot 
-
-cdf <- df %>%
-  group_by(id,group) %>%
-  summarise(reward =mean(reward, na.rm=TRUE), remaining_time=mean(remaining_time, na.rm=TRUE))
-
-g <- ggplot(aes(y = reward, x = remaining_time), data = cdf) +
-    geom_point(alpha=0.4) +
-    geom_smooth(method = 'lm', se = TRUE, legend=TRUE)  + 
-    scale_colour_brewer(palette="Set1")  + 
-    ggpubr::stat_cor(method = "pearson",  alternative = "two.sided",  cor.coef.name = c("r"),  label.sep = ", ",  label.x.npc = "left",  label.y.npc = "bottom", digits = 3, r.digits = 3, p.digits = 3) +
-   ylab("Reward attained within episode") + 
-   xlab("Speeding up effect (positive vals=faster speeding up)") +
-   scale_x_continuous(breaks=c(-0.00001, 0, 0.00001))
-    
-  print(g)
-  
-  
-g <- ggplot(aes(y = reward, x = remaining_time, group=group), data = cdf) +
-    geom_point(alpha=0.4) +
-    geom_smooth(method = 'lm', se = TRUE, legend=TRUE)  + 
-    scale_colour_brewer(palette="Set1")  + 
-    ggpubr::stat_cor(method = "pearson",  alternative = "two.sided",  cor.coef.name = c("r"),  label.sep = ", ",  label.x.npc = "left",  label.y.npc = "bottom", digits = 3, r.digits = 3, p.digits = 3) +
-   ylab("Reward attained within episode") + 
-   xlab("Speeding up effect (positive vals=faster speeding up)")
-    
-  print(g)
-```
 
 
 # RT effects WITHIN-PATCH
@@ -1343,11 +1277,11 @@ car::Anova(glm3.sl.1)
 em <- emtrends(glm3.sl.1, pairwise ~ decay_fac*group , var = "patch_time", adjust=adjustment_method)
 em
 sl<-modelbased::estimate_slopes(glm3.sl.1, trend = "patch_time", at=c("decay_fac", "group"), ci = 0.95)
-plot(sl)
+
 #group:patch_time:blk_number                            29.0687  1  6.985e-08 ***
 
 em <- emtrends(glm3.sl.1, pairwise ~ group | decay_fac*travel_time_lvl , var = "patch_time", adjust=adjustment_method)
 em
 sl2<-modelbased::estimate_slopes(glm3.sl.1, trend = "patch_time", at=c("decay_fac", "travel_time_lvl", "group"), ci = 0.95)
-plot(sl2)
+
 ```
