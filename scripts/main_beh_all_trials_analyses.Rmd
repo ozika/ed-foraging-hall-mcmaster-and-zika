@@ -214,15 +214,18 @@ NOTE: I removed the decision from the random slopes here - the models were not c
 ##glm1.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*decision + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
 #glm1.sl.2 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*decision*remaining_time + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
 
+
+data$remaining_time_reversed <-   data$remaining_time * (-1)
+
 # models with speeding up within block
 glm1.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
-glm1.sl.2 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*remaining_time + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+glm1.sl.2 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*remaining_time_reversed + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
 
 # models with speeding up within episode
 glm2.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*patch_time + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
 
 # models with both 
-glm3.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*patch_time + decay_fac*travel_time_lvl*group*remaining_time + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+glm3.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*patch_time + decay_fac*travel_time_lvl*group*remaining_time_reversed + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
 
 
 performance::compare_performance( glm1.sl.1, glm1.sl.2, glm2.sl.1, glm3.sl.1)#
@@ -356,14 +359,14 @@ group:remaining_time                            39.0090  1  4.219e-10 ***
 ### Speeding up overall
 
 ```{r}
-em <- emtrends(glm1.sl.2, pairwise ~ 1 , var = "remaining_time", adjust=adjustment_method)
+em <- emtrends(glm1.sl.2, pairwise ~ 1 , var = "remaining_time_reversed", adjust=adjustment_method)
 em
 
-data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time), q = seq(0,1,0.05))
+data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time_reversed), q = seq(0,1,0.05))
 
 df <- data %>% 
   group_by(id, rem_time_q) %>% 
-  summarise_at(c( "logRT", "remaining_time"), mean)
+  summarise_at(c( "logRT", "remaining_time_reversed"), mean)
 
 g <- ggplot(aes(y = logRT, x = rem_time_q, fill=rem_time_q), data = df) +
   geom_point(alpha=0.2, aes(color=rem_time_q), show.legend = FALSE) +
@@ -375,13 +378,13 @@ g <- ggplot(aes(y = logRT, x = rem_time_q, fill=rem_time_q), data = df) +
 g
 
 ## alternative plot
-data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time), q = seq(0,1,0.02))
+data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time_reversed), q = seq(0,1,0.02))
 df <- data %>% 
   group_by(id, group,rem_time_q) %>% 
   summarise_at(c("logRT", "remaining_time"), mean)
 
 library(ggplot2)
-g <- ggplot(aes(y = logRT, x = remaining_time), data = df) +
+g <- ggplot(aes(y = logRT, x = remaining_time_reversed), data = df) +
   geom_point(alpha=0.2) +
     geom_smooth(method = 'lm', se = TRUE)  + 
   scale_colour_brewer(palette="Set1")  
@@ -404,14 +407,14 @@ $contrasts
  group1 - group2 0.000315 4.92e-05 Inf   6.405  <.0001
 
 ```{r}
-em <- emtrends(glm1.sl.2, pairwise ~ group , var = "remaining_time", adjust=adjustment_method)
+em <- emtrends(glm1.sl.2, pairwise ~ group , var = "remaining_time_reversed", adjust=adjustment_method)
 em
 
-data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time), q = seq(0,1,0.05))
+data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time_reversed), q = seq(0,1,0.05))
 
 df <- data %>% 
   group_by(id, group, rem_time_q) %>% 
-  summarise_at(c( "logRT", "remaining_time"), mean)
+  summarise_at(c( "logRT", "remaining_time_reversed"), mean)
 
 g <- ggplot(aes(y = logRT, x = rem_time_q, fill=interaction(group,rem_time_q)), data = df) +
   geom_point(alpha=0.2, aes(color=group), show.legend = FALSE) +
@@ -976,8 +979,8 @@ df2 <- df %>%
   summarise_at(c("F1", "remaining_time"), mean)
 
 
-  
-g <- ggplot(aes(y = F1, x = remaining_time), data = df2) +
+df2$remaining_time_reversed <-   df2$remaining_time * (-1)
+g <- ggplot(aes(y = F1, x = remaining_time_reversed), data = df2) +
     geom_point(alpha=0.6, size = 3, color = "deeppink") +  # Increase dot size and change color
     geom_smooth(method = 'lm', se = TRUE, color = "deeppink", fill = "deeppink", alpha = 0.3) +  # Change regression line color, opaque dodgerblue shading
     scale_colour_brewer(palette="Set1") +
@@ -990,6 +993,7 @@ g <- ggplot(aes(y = F1, x = remaining_time), data = df2) +
                      label.r = unit(0.2, "lines"),  # Rounded corners
                      label.background = element_rect(fill = "white", color = "deeppink", size = 0.5)) +  # White background, dodgerblue border, rounded edges
    ylab("F1: Eating attitudes") + 
+  #scale_x_reverse() +
    xlab("Speeding up effect (positive vals=faster speeding up)") +
     theme(panel.background = element_blank(),  # Ensure background is transparent
           panel.grid.major = element_blank(),   # Remove major grid lines
@@ -1004,7 +1008,7 @@ g <- ggplot(aes(y = F1, x = remaining_time), data = df2) +
 print(g)
 
 ggsave(
-  here::here("output", "F1_speeding_up_corr.pdf"), 
+  here::here("output", "F1_speeding_up_corr_flipped.pdf"), 
   scale = 1,
   width = 5,
   height = 5,
@@ -1058,6 +1062,7 @@ df <- data %>%
 g <- ggplot(aes(y = logRT, x = remaining_time, color=group), data = df) +
   geom_point(alpha=0.2) +
     geom_smooth(method = 'lm', se = TRUE)  + 
+  scale_x_reverse() +
   scale_color_manual(values = rep(c("maroon4","dodgerblue"), 20))  
   #ggtitle("F1 ~ TF1 * wave * Deaths ") 
 g
@@ -1070,6 +1075,7 @@ df <- data %>%
 g <- ggplot(aes(y = logRT, x = remaining_time, color=F1.ms), data = df) +
   geom_point(alpha=0.2) +
     geom_smooth(method = 'lm', se = TRUE)  + 
+  scale_x_reverse() +
   scale_color_manual(values = rep(c("dodgerblue", "maroon4"), 20))  
   ggtitle("Split by F1") 
 g
@@ -1081,6 +1087,7 @@ df <- data %>%
 g <- ggplot(aes(y = logRT, x = remaining_time, color=F2.ms), data = df) +
   geom_point(alpha=0.2) +
     geom_smooth(method = 'lm', se = TRUE)  + 
+  scale_x_reverse() +
   scale_color_manual(values = rep(c("dodgerblue", "maroon4"), 20))  
   ggtitle("Split by F2") 
 g
@@ -1092,6 +1099,7 @@ df <- data %>%
 g <- ggplot(aes(y = logRT, x = remaining_time, color=F3.ms), data = df) +
   geom_point(alpha=0.2) +
     geom_smooth(method = 'lm', se = TRUE)  + 
+  scale_x_reverse() +
   scale_color_manual(values = rep(c("dodgerblue", "maroon4"), 20))  
   ggtitle("Split by F3") 
 g
