@@ -12,8 +12,17 @@ library(here)
 here::i_am(".ed-foraging-root")
 renv::restore(here::here())
 
+
 renv::load(here::here())
  
+# data set 
+# "" = stadnard EAT26<14
+# "_alt_cutoff" = alternative cutoff EAT26<20
+data_set = "_alt_cutoff"
+
+questionnaire_family = "with_cia" # alt without cia - for the review process, asked by the reviewers
+
+corr_type = "spearman"
 
 required_packages = c("glmmTMB", "car", "parameters","tidyr", "see", "dplyr", "lmerTest", "parameters", "emmeans", "modelbased", "ggpubr", "kableExtra", "psych", "GPArotation", "corrplot", "nFactors")
 invisible(lapply(required_packages, require, character.only = TRUE))
@@ -22,30 +31,38 @@ here::i_am(".hidden_root_foraging")
 adjustment_method = "holm"
 ```
 ```{r}
-data <- read.csv(here::here( 'anon-data', 'task_data', 'full_beh_data.csv'))
+data <- read.csv(here::here( 'anon-data', 'task_data', paste0('full_beh_data',data_set,'.csv')))
 data$logRT <- log(data$RT)
 data$log_patch_actions_taken <- log(data$patch_actions_taken)
 data <- data %>%
   mutate(decision_type = recode(decision_type, `1` = 0, `2` = 1))
 
 ## add questionnaires data 
-qs <- read.csv(here::here( 'anon-data', 'questionnaires', 'anonymized_processed_questonnaire_data.csv'))
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_processed_questonnaire_data',data_set,'.csv')))
 qs$id <- qs$PROLIFICID
-qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou",  "oci")]
+
+if (questionnaire_family=="with_cia") {
+  qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou", "cia",   "oci")]
+}  else if (questionnaire_family=="without_cia") {
+  qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou", "oci")]
+}
 data = merge(data, qs, by=c("id")) # NA's match
 
 
 
-fa.scores <- read.csv(here::here( 'anon-data', 'questionnaires', 'factor_scores.csv'))
+fa.scores <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('factor_scores',data_set,'.csv')))
 data = merge(data, fa.scores, by=c("id")) # NA's match
 
 # extract questionnaires by group 
-vars2summarize <- c("age", "bmi", "EducationYears", "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou",  "oci", "F1", "F2", "F3")
-
+if (questionnaire_family=="with_cia") {
+  vars2summarize <- c("age", "bmi", "EducationYears", "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou", "cia",  "oci", "F1", "F2", "F3")
+}  else if (questionnaire_family=="without_cia") {
+  vars2summarize <- c("age", "bmi", "EducationYears", "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou", "oci", "F1", "F2", "F3")
+}
 df <- data %>%   group_by(id, group) %>%
   summarise_at(vars2summarize, mean, na.rm = TRUE)
 
-write.csv(df, here::here("output", "basic_demographics.csv"))
+write.csv(df, here::here("output", paste0("basic_demographics",data_set,".csv")))
 ```
 ## Func
 
@@ -95,6 +112,9 @@ run_descriptives <- function(df, vec) {
 
 
 ```
+```{r}
+
+```
 
 ## Group means
 ```{r}
@@ -102,7 +122,7 @@ run_descriptives <- function(df, vec) {
 df2 <- df %>%   group_by(group) %>%
   summarise_at(vars2summarize, mean, na.rm = TRUE)
 df2
-write.csv(df2, here::here("output", "basic_demographics_group_means.csv"))
+write.csv(df2, here::here("output", paste0("basic_demographics_group_means",data_set,".csv")))
 ```
 
 ```{r}
@@ -120,6 +140,12 @@ result <- df2 %>%
   ungroup()
 
 print(result)
+data_matrix <- matrix(c(40, 45, 4, 1), nrow = 2, byrow = FALSE)
+data_matrix
+chisq.test(data_matrix)
+
+fisher.test(data_matrix)
+
 ```
 
 ## Group tests
@@ -141,7 +167,7 @@ tb <- kable(stats, caption = "Table 1") %>%
   #column_spec(2, bold = FALSE, color = "black") %>%
   add_header_above(c(" " = 1, "Group 1" = 2, "Group 2" = 2, " "=3)) %>%
   save_kable(here::here("output", "table1.png"))
-write.csv(stats, here::here("output", "table1.csv"))
+write.csv(stats, here::here("output", paste0("table1",data_set,".csv")))
 print(stats)
 # selected 
 stats2<-stats[stats$variable %in% c("age", "bdi", "F1", "F2", "F3"),]
@@ -151,7 +177,7 @@ tb <- kable(stats2, caption = "Table 1") %>%
   column_spec(1, bold = FALSE) %>%
   #column_spec(2, bold = FALSE, color = "black") %>%
   add_header_above(c(" " = 2, "Group 1" = 2, "Group 2" = 2, " "=3)) %>%
-  save_kable(here::here("output", "table1_reduced.png"))
+  save_kable(here::here("output", paste0("table1_reduced",data_set,".png")))
 
 ```
 
@@ -184,9 +210,18 @@ ggplot(df_summary, aes(x = Variable, y = mean_value, fill = group)) +
 ```
 ### Factor analysis
 ```{r fig.width=15, fig.height=15}
-qs <- read.csv(here::here( 'anon-data', 'questionnaires', 'anonymized_item_questonnaire_data.csv'))
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_item_questonnaire_data',data_set,'.csv')))
 
-cdf <- cor(qs[, !(colnames(qs) %in% c("X", "PROLIFICID"))], method="spearman")
+if (questionnaire_family=="with_cia") {
+ # qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou", "cia",   "oci")]
+}  else if (questionnaire_family=="without_cia") {
+  qs <- qs[,!grepl("cia", colnames(qs))]
+  
+  #qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou", "oci")]
+}
+
+
+cdf <- cor(qs[, !(colnames(qs) %in% c("X", "PROLIFICID"))], method=corr_type)
 corrplot::corrplot(cdf)
 ```
 
@@ -214,15 +249,25 @@ fa3 <- fa(as.matrix(cdf), nfactors = 3, rotate = "oblimin", fm = "minres", score
 
 fa3.load <- data.frame(unclass(fa3$loadings))
 
+
+if (questionnaire_family=="with_cia") {
 questionnaire_info <- data.frame(
   item = colnames(cdf),
-  #questionnaire = c(rep("EAT26", 25), rep("EDE-Q", 22), rep("AAI", 10), 
-   #                 rep("STAI", 20), rep("BDI", 21), 
-  #                  rep("IOU", 21), rep("OCD", 18))  # Adjust this based on your actual data
-    questionnaire = c(rep("EAT-26 (Eating Attitudes)", 25), rep("EDE-Q (Eating Disorder)", 22), rep("AAI (Appearance Anxiety)", 10), 
+   questionnaire = c(rep("EAT-26 (Eating Attitudes)", 26), rep("EDE-Q (Eating Disorder)", 22), rep("CIA (Clinical Impairment)", 16), rep("AAI (Appearance Anxiety)", 10), 
                     rep("STAI-T (Trait Anxiety)", 20), rep("BDI (Depression)", 21), 
                     rep("IOU (Intolerance of Uncertainty)", 21), rep("OCI (Obsessive-Compulsive Inventory)", 18))  # Adjust this based on your actual data
 )
+
+}  else if (questionnaire_family=="without_cia") {
+     questionnaire_info <- data.frame(
+  item = colnames(cdf),
+   questionnaire = c(rep("EAT-26 (Eating Attitudes)", 26), rep("EDE-Q (Eating Disorder)", 22),  rep("AAI (Appearance Anxiety)", 10), 
+                    rep("STAI-T (Trait Anxiety)", 20), rep("BDI (Depression)", 21), 
+                    rep("IOU (Intolerance of Uncertainty)", 21), rep("OCI (Obsessive-Compulsive Inventory)", 18))  # Adjust this based on your actual data
+)
+   
+}
+
 
 # Melt the data for ggplot
 fa3.load$item <- rownames(fa3.load)
@@ -232,7 +277,7 @@ fa3.load <- fa3.load %>% gather(factor, loading, -item)
 fa3.load$factor <- recode(fa3.load$factor, 
                           MR1 = "F1: Eating Attitudes", 
                           MR2 = "F2: Uncertainty Sensitivity", 
-                          MR3 = "F3: Anxious Depression")
+                          MR3 = "F3: Anxiety & Depression")
 
 # Merge with questionnaire info
 plot_data <- merge(fa3.load, questionnaire_info, by = "item")
@@ -240,9 +285,17 @@ plot_data <- merge(fa3.load, questionnaire_info, by = "item")
 
 ```{r fig.width=15, fig.height=7}
 # Define colors for each questionnaire
-questionnaire_colors <- c("EAT-26 (Eating Attitudes)" = "purple", "EDE-Q (Eating Disorder)" = "deeppink", "AAI (Appearance Anxiety)" = "brown2", 
+if (questionnaire_family=="with_cia") {
+   questionnaire_colors <- c("EAT-26 (Eating Attitudes)" = "purple", "EDE-Q (Eating Disorder)" = "deeppink", "CIA (Clinical Impairment)" = "yellow3", "AAI (Appearance Anxiety)" = "brown2", 
                           "STAI-T (Trait Anxiety)" = "midnightblue", "BDI (Depression)" = "dodgerblue", 
                           "IOU (Intolerance of Uncertainty)" = "darkgoldenrod2", "OCI (Obsessive-Compulsive Inventory)" = "seagreen4")
+  }  else if (questionnaire_family=="without_cia") {
+    questionnaire_colors <- c("EAT-26 (Eating Attitudes)" = "purple", "EDE-Q (Eating Disorder)" = "deeppink", "AAI (Appearance Anxiety)" = "brown2", 
+                          "STAI-T (Trait Anxiety)" = "midnightblue", "BDI (Depression)" = "dodgerblue", 
+                          "IOU (Intolerance of Uncertainty)" = "darkgoldenrod2", "OCI (Obsessive-Compulsive Inventory)" = "seagreen4")
+  }
+
+
 
 # Plot factor loadings
 plot_factor_loadings <- ggplot(plot_data, aes(x = item, y = loading, fill = questionnaire)) +
@@ -270,6 +323,13 @@ plot_factor_loadings <- ggplot(plot_data, aes(x = item, y = loading, fill = ques
 # Print the plot
 print(plot_factor_loadings)
 
+ggsave(
+  here::here("output", "fa.pdf"), 
+  scale = 1,
+  width = 15,
+  height = 7,
+  units = c("in"),
+  dpi = 300)
 
 ```
 
@@ -297,6 +357,22 @@ ddf <- qs[, !(colnames(qs) %in% c("X", "PROLIFICID"))]
 scores <- data.frame(cbind(qs[,"PROLIFICID"], factor.scores(ddf, fa3, method = "Thurstone")$scores))
 scores[,2:4] <- data.frame(lapply(scores[,2:4], as.numeric))
 colnames(scores) <- c("id", "F1", "F2", "F3")
-write.csv(scores, here::here( 'anon-data', 'questionnaires', 'factor_scores.csv'))
+write.csv(scores, here::here( 'anon-data', 'questionnaires', paste0('factor_scores',data_set,'.csv')))
+```
+
+
+### Correlate all Items
+
+```{r}
+dfs = read.csv(here::here("anon-data", "task_data", "speeding_up.csv"))
+
+
+## add questionnaires data 
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_processed_questonnaire_data',data_set,'.csv')))
+qs$id <- qs$PROLIFICID
+
+qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou", "cia",   "oci")]
+
+dfs = merge(dfs, qs, on="id")
 ```
 

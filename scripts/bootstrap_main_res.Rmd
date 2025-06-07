@@ -18,7 +18,7 @@ renv::load(here::here())
 
 # data set 
 # "" = stadnard
-# "_alt_cutoff" = alternative cutoff EAT26>=20
+# "_alt_cutoff" = alternative cutoff
 data_set = "_alt_cutoff"
 
 required_packages = c("glmmTMB", "car", "parameters", "see", "bayestestR", "dplyr", "lmerTest", "effectsize", "emmeans", "modelbased", "ggpubr", "gtools", "tidyr")
@@ -31,7 +31,6 @@ adjustment_method = "holm"
 ```
 ```{r}
 data <- read.csv(here::here( 'anon-data', 'task_data', paste0('full_beh_data',data_set,'.csv')))
-data$gender.str <- as.factor(paste0("g", as.character(data$gender)))
 data$reward <- as.numeric(data$patch_reward_recieved)
 data$logRT <- log(data$RT)
 data$log_patch_actions_taken <- log(data$patch_actions_taken)
@@ -52,11 +51,11 @@ data$cum_reward_patch <- data$cum_reward_patch/100
 ## add questionnaires data 
 qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_processed_questonnaire_data',data_set,'.csv')))
 qs$id <- qs$PROLIFICID
-qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq", "cia", "aai", "stait", "bdi",  "iou",  "oci")]
+qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou",  "oci")]
 data = merge(data, qs, by=c("id"), all.x = TRUE) # NA's match
 
 # add factor scores
-fa.scores <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('factor_scores',data_set,'.csv')))
+fa.scores <- read.csv(here::here( 'anon-data', 'questionnaires', 'factor_scores.csv'))
 data = merge(data, fa.scores, by=c("id"),all.x = TRUE) # NA's match
 
 rew <- read.csv(here::here( 'anon-data', 'task_data', paste0('rewards_data',data_set,'.csv')))
@@ -202,6 +201,7 @@ Posthoc: interaction travel time * decay
 em <- emmeans(glm1.sl, pairwise ~ travel_time_lvl*decay_fac, adjust=adjustment_method)
 em
 ```
+decay_lvl:group:decision                  5.4842  1   0.019189 *  
 
 ```{r}
 em <- emmeans(glm1.sl, pairwise ~ group | decision*decay_fac, adjust=adjustment_method)
@@ -223,19 +223,116 @@ NOTE: I removed the decision from the random slopes here - the models were not c
 
 data$remaining_time_reversed <-   data$remaining_time * (-1)
 
-# models with speeding up within block
-glm1.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
-glm1.sl.2 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*remaining_time_reversed + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+unique_ids <- unique(data$id)
+
+expdf <- data.frame()
+for (prop in c(0.7, 0.8, 0.9)) {
+  for (rid in seq(500)) {
+    print(rid)
+    n_sample <- ceiling(length(unique_ids) * prop)
+    sampled_items <- sample(unique_ids, n_sample)
+
+    dtl <- data[data$id %in% sampled_items,]
+    
+    slmod <- glmmTMB::glmmTMB(data=dtl, RT ~ decay_fac*travel_time_lvl*group*remaining_time_reversed + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+    
+    an<-car::Anova(slmod)
+    
+    
+    
+    em <- emtrends(slmod, pairwise ~  group , var = "remaining_time_reversed", adjust=adjustment_method)
+    em
+    
+    tt <- data.frame(em$contrasts)
+    tt$prop <- prop
+    tt$runid <- rid
+    
+    rundf <- cbind(data.frame(an)["group:remaining_time_reversed",], tt)
+    expdf <- rbind(expdf, rundf)
+  }
+  
+}
+
+write.csv(expdf, here::here( 'output', 'group_rem_time_bootstrap_500.csv'))
 
 
 
-# models with speeding up within episode
-glm2.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*patch_time + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+```
 
-#gender.str
-performance::compare_performance( glm1.sl.1, glm1.sl.2, glm2.sl.1)#
+```{r}
+library(ggplot2)
+library(dplyr)
 
-# models with speeding up effect in block fit much better thatn speeding up within patch
+# Calculate percentiles
+p_low <- quantile(expdf$Pr..Chisq., 0.025)
+p_high <- quantile(expdf$Pr..Chisq., 0.975)
+
+ggplot(expdf, aes(x = Pr..Chisq.)) +
+  geom_histogram(
+    bins = 100,
+    aes(fill = ..x.. >= p_low & ..x.. <= p_high),
+    color = "black"
+  ) +
+  scale_fill_manual(values = c("FALSE" = "dodgerblue", "TRUE" = "pink"), guide = "none") +
+  
+  # Vertical lines with limited y range using geom_segment
+  #geom_segment(aes(x = p_low, xend = p_low, y = 0, yend = 80), color = "red", linetype = "dashed") +
+  #geom_segment(aes(x = p_high, xend = p_high, y = 0, yend = 80), color = "red", linetype = "dashed") +
+  #geom_segment(aes(x = 49.5, xend = 49.5, y = 0, yend = 85), color = "darkgreen", linetype = "dashed") +
+  
+  # Labels at top of lines
+  #annotate("text", x = p_low, y = 82, 
+  #         label = paste0("X²(2.5%) = ", round(p_low, 2)), 
+  #         vjust = -0.5, color = "red") +
+  #annotate("text", x = p_high, y = 82, 
+  #         label = paste0("X²(97.5%) = ", round(p_high, 2)), 
+  #         vjust = -0.5, color = "red") +
+  #annotate("text", x = 55, y = 90, 
+  #         label = "Full sample statistic \n(X² = 49.5)", 
+  #         vjust = -0.5, color = "darkgreen") +
+  
+  # Optional: facet
+  # facet_grid(cols = vars(prop)) +
+  
+  theme_minimal()
+
+```
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Calculate percentiles
+p_low <- quantile(expdf$Chisq, 0.025)
+p_high <- quantile(expdf$Chisq, 0.975)
+
+ggplot(expdf, aes(x = Chisq)) +
+  geom_histogram(
+    bins = 50,
+    aes(fill = ..x.. >= p_low & ..x.. <= p_high),
+    color = "black"
+  ) +
+  scale_fill_manual(values = c("FALSE" = "dodgerblue", "TRUE" = "pink"), guide = "none") +
+  
+  # Vertical lines with limited y range using geom_segment
+  geom_segment(aes(x = p_low, xend = p_low, y = 0, yend = 80), color = "red", linetype = "dashed") +
+  geom_segment(aes(x = p_high, xend = p_high, y = 0, yend = 80), color = "red", linetype = "dashed") +
+  geom_segment(aes(x = 49.5, xend = 49.5, y = 0, yend = 85), color = "darkgreen", linetype = "dashed") +
+  
+  # Labels at top of lines
+  annotate("text", x = p_low, y = 82, 
+           label = paste0("X²(2.5%) = ", round(p_low, 2)), 
+           vjust = -0.5, color = "red") +
+  annotate("text", x = p_high, y = 82, 
+           label = paste0("X²(97.5%) = ", round(p_high, 2)), 
+           vjust = -0.5, color = "red") +
+  annotate("text", x = 55, y = 90, 
+           label = "Full sample statistic \n(X² = 49.5)", 
+           vjust = -0.5, color = "darkgreen") +
+  
+  # Optional: facet
+  # facet_grid(cols = vars(prop)) +
+  
+  theme_minimal()
 
 ```
 
@@ -267,7 +364,60 @@ sl
 ```
 
 
+# Model with speeding up per block
+glm1.sl.2:
+Response: RT
+                                                  Chisq Df Pr(>Chisq)    
+decay_fac                                        0.1033  1   0.747864    
+travel_time_lvl                                 26.8778  1  2.167e-07 ***
+group                                            3.0899  1   0.078782 .  
+remaining_time                                 210.1438  1  < 2.2e-16 ***
+decay_fac:travel_time_lvl                      101.1114  1  < 2.2e-16 ***
+decay_fac:group                                  1.3775  1   0.240533    
+travel_time_lvl:group                            0.4250  1   0.514466    
+decay_fac:remaining_time                         3.9154  1   0.047845 *  
+travel_time_lvl:remaining_time                   9.1381  1   0.002503 ** 
+group:remaining_time                            39.0113  1  4.214e-10 ***
+decay_fac:travel_time_lvl:group                  3.4565  1   0.063004 .  
+decay_fac:travel_time_lvl:remaining_time         0.6779  1   0.410321    
+decay_fac:group:remaining_time                   0.0249  1   0.874517    
+travel_time_lvl:group:remaining_time             1.8937  1   0.168784    
+decay_fac:travel_time_lvl:group:remaining_time   0.4349  1   0.509592 
 
+# Model with speeding up per episode - here speeding up intearacts with decay_fac
+decay_fac                                    0.0640  1   0.800306    
+travel_time_lvl                             25.6496  1  4.094e-07 ***
+group                                        2.8406  1   0.091908 .  
+patch_time                                   2.3580  1   0.124643    
+decay_fac:travel_time_lvl                   41.7257  1  1.050e-10 ***
+decay_fac:group                              1.8229  1   0.176963    
+travel_time_lvl:group                        0.5338  1   0.465017    
+decay_fac:patch_time                         0.4227  1   0.515597    
+travel_time_lvl:patch_time                 146.1175  1  < 2.2e-16 ***
+group:patch_time                             0.4829  1   0.487111    
+decay_fac:travel_time_lvl:group              5.2389  1   0.022087 *  
+decay_fac:travel_time_lvl:patch_time        15.4060  1  8.671e-05 ***
+decay_fac:group:patch_time                  16.6962  1  4.387e-05 ***
+travel_time_lvl:group:patch_time             1.3270  1   0.249333    
+decay_fac:travel_time_lvl:group:patch_time  10.4580  1   0.001221 ** 
+
+### 4-way interaction = decay_fac:travel_time_lvl:group:patch_time 
+$contrasts
+decay_fac = fast, travel_time_lvl = long:
+ contrast         estimate      SE  df z.ratio p.value
+ group1 - group2 -0.002194 0.00219 Inf  -1.001  0.3168
+
+decay_fac = slow, travel_time_lvl = long:
+ contrast         estimate      SE  df z.ratio p.value
+ group1 - group2  0.000446 0.00140 Inf   0.318  0.7507
+
+decay_fac = fast, travel_time_lvl = short:
+ contrast         estimate      SE  df z.ratio p.value
+ group1 - group2 -0.008740 0.00240 Inf  -3.641  0.0003
+
+decay_fac = slow, travel_time_lvl = short:
+ contrast         estimate      SE  df z.ratio p.value
+ group1 - group2  0.005502 0.00147 Inf   3.739  0.0002
  
 
 ```{r}
@@ -315,17 +465,18 @@ g
 ```
 
 ### Speeding up by group
+NOTE: Results may be misleading due to involvement in interactions
 $emtrends
- group  remaining_time_reversed.trend       SE  df asymp.LCL asymp.UCL
- group1                     -0.000555 3.73e-05 Inf -0.000628 -0.000482
- group2                     -0.000191 3.36e-05 Inf -0.000257 -0.000125
+ group  remaining_time.trend       SE  df asymp.LCL asymp.UCL
+ group1             0.000506 3.58e-05 Inf  0.000436  0.000577
+ group2             0.000191 3.38e-05 Inf  0.000125  0.000257
 
 Results are averaged over the levels of: decay_fac, travel_time_lvl 
 Confidence level used: 0.95 
 
 $contrasts
- contrast         estimate       SE  df z.ratio p.value
- group1 - group2 -0.000364 5.03e-05 Inf  -7.244  <.0001
+ contrast        estimate       SE  df z.ratio p.value
+ group1 - group2 0.000315 4.92e-05 Inf   6.405  <.0001
 
 ```{r}
 em <- emtrends(glm1.sl.2, pairwise ~ group , var = "remaining_time_reversed", adjust=adjustment_method)
@@ -441,8 +592,6 @@ data$unique_episode <- paste0("bl", data$blk_number, "_ep", data$episode)
 
 m <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group + (1+decay_fac+travel_time_lvl+remaining_time|unique_episode/id), family = Gamma(link=linkfunc))
 
-
-
 # Get speeding up effect for each episode (while controlling for other vars)
 sl<-data.frame(ranef(m)$cond$`id:unique_episode`)
 sl$rawvar <- rownames(sl)
@@ -483,7 +632,7 @@ if (dost==1) {
 df2 <- df %>% 
   group_by(id, group) %>% 
   summarise_at(c("reward", "remaining_time"), mean)
-write.csv(df2, here::here("anon-data", "task_data", "speeding_up.csv"))
+
 
 # Plot
 g <- ggplot(aes(y = reward, x = remaining_time), data = df2) +
@@ -913,7 +1062,7 @@ df2 <- df %>%
 
 
 df2$remaining_time_reversed <-   df2$remaining_time * (-1)
-g <- ggplot(aes(y = F1, x = remaining_time), data = df2) +
+g <- ggplot(aes(y = F1, x = remaining_time_reversed), data = df2) +
     geom_point(alpha=0.6, size = 3, color = "deeppink") +  # Increase dot size and change color
     geom_smooth(method = 'lm', se = TRUE, color = "deeppink", fill = "deeppink", alpha = 0.3) +  # Change regression line color, opaque dodgerblue shading
     scale_colour_brewer(palette="Set1") +
@@ -1180,6 +1329,52 @@ correlation_results <- data %>%
 hist(correlation_results$correlation)
 ```
 
+```{r}
+log.m <- glmmTMB::glmmTMB(data=data, formula=decision_type ~ group*travel_time_lvl + group*decay_lvl + remaining_time*group + (1|id), family=binomial(link = "logit"))
+log.m2 <- glmmTMB::glmmTMB(data=data, formula=decision_type ~ group*travel_time_lvl + group*decay_lvl + group*cum_reward_patch + (1|id), family=binomial(link = "logit"))
+log.m3 <- glmmTMB::glmmTMB(data=data, formula=decision_type ~ group*travel_time_lvl + group*decay_lvl + patch_time*group + (1|id), family=binomial(link = "logit"))
+
+log.all <- glmmTMB::glmmTMB(data=data, formula=decision_type ~ group*travel_time_lvl + group*decay_lvl + remaining_time*group + patch_time*group + group*cum_reward_patch + (1|id), family=binomial(link = "logit"))
+car::Anova(log.all)
+
+summary(log.all)
+#car::Anova(log.m2)
 
 
 
+```
+
+```{r  fig.width=7, fig.height=5}
+em <- emmeans(log.all, pairwise ~ group * decay_lvl, adjust=adjustment_method)
+em
+
+df = data %>%
+  group_by(id, group, decay_lvl) %>%
+  summarise_at(c("decision_type"), mean, na.rm = TRUE) 
+df$log_decision_type <- log(df$decision_type)
+
+g <- ggplot(data = df, aes(y = log_decision_type, fill = interaction(group, decay_lvl), x=decay_lvl)) +
+  geom_point(aes(color = group), position =   position_jitterdodge(  jitter.width = .15,  dodge.width = 0.777
+                                                                                                       ), size = 2, lwd=1, alpha = 0.5, show.legend=FALSE) +
+  scale_fill_manual(values = rep(c("darkgreen", "blue"),2)) + 
+  geom_boxplot(inherit.aes = TRUE,  width = .8, lwd=1.2, outlier.shape = NA, alpha = 0.5, show.legend=TRUE)   + 
+  
+  scale_color_manual(values = rep(c("darkgreen", "blue"),2)) 
+g
+```
+
+## Speeding up within patch 
+```{r}
+car::Anova(glm3.sl.1)
+
+em <- emtrends(glm3.sl.1, pairwise ~ decay_fac*group , var = "patch_time", adjust=adjustment_method)
+em
+sl<-modelbased::estimate_slopes(glm3.sl.1, trend = "patch_time", at=c("decay_fac", "group"), ci = 0.95)
+
+#group:patch_time:blk_number                            29.0687  1  6.985e-08 ***
+
+em <- emtrends(glm3.sl.1, pairwise ~ group | decay_fac*travel_time_lvl , var = "patch_time", adjust=adjustment_method)
+em
+sl2<-modelbased::estimate_slopes(glm3.sl.1, trend = "patch_time", at=c("decay_fac", "travel_time_lvl", "group"), ci = 0.95)
+
+```

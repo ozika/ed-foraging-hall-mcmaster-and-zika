@@ -15,6 +15,12 @@ renv::restore(here::here())
 
 renv::load(here::here())
  
+
+# data set 
+# "" = standard
+# "_alt_cutoff" = alternative cutoff in response to reviews
+data_set = "_alt_cutoff"
+
 # renv::snapshot()
 
 required_packages = c("glmmTMB", "car", "parameters", "see", "dplyr", "lmerTest", "effectsize", "emmeans", "ggplot2", "lme4", "tidyr", "kableExtra")
@@ -26,7 +32,9 @@ adjustment_method = "holm"
 ## Load data and merge with questionnaires
 
 ```{r}
-data <- read.csv(here::here( 'anon-data', 'task_data', 'leaving_time_data.csv'))
+#data <- read.csv(here::here( 'anon-data', 'task_data', paste0('leaving_time_data',data_set,'.csv')))
+data <- read.csv(here::here( 'anon-data', 'task_data', paste0('leaving_time_data.csv')))
+data$gender.str <- as.factor(paste0("g", as.character(data$gender)))
 data$log_patch_actions_taken <- log(data$patch_actions_taken)
 
 rew <- read.csv(here::here( 'anon-data', 'task_data', 'rewards_data.csv'))
@@ -34,13 +42,13 @@ rew$total_rewards <- rew$patch_reward_recieved
 data = merge(data, rew, by=c("id","travel_time_lvl", "decay_lvl")) # NA's match
 
 ## add questionnaires data 
-qs <- read.csv(here::here( 'anon-data', 'questionnaires', 'anonymized_processed_questonnaire_data.csv'))
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_processed_questonnaire_data',data_set,'.csv')))
 qs$id <- qs$PROLIFICID
-qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou",  "oci")]
+qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq", "cia", "aai", "stait", "bdi",  "iou",  "oci")]
 data = merge(data, qs, by=c("id")) # NA's match
 
 # add factor scores
-fa.scores <- read.csv(here::here( 'anon-data', 'questionnaires', 'factor_scores.csv'))
+fa.scores <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('factor_scores',data_set,'.csv')))
 data = merge(data, fa.scores, by=c("id")) # NA's match
 ```
 
@@ -383,6 +391,8 @@ df2 <- df %>%
 print(df2)
 ```
 
+
+
 ## Leaving time by group 
 ```{r fig.width = 4, fig.height=6}
 
@@ -412,14 +422,57 @@ ggplot(df_summary, aes(x = group, y = mean_value, fill = group)) +
   #theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ggsave(
-  here::here("output", "patch_time_by_group.svg"), 
+  here::here("output", "patch_time_by_group.svg"),
   scale = 1,
   width = 4,
   height = 6,
   units = c("in"),
   dpi = 300)
-write.csv(df_long, here::here("output", "data_patch_time.csv"))
+write.csv(df_long, here::here("output", paste0("data_patch_time",data_set,".csv")))
 ```
+
+### Factors
+
+Note more variability in group2
+
+```{r, fig.width=4, fig.height=5}
+df = data %>%
+  group_by(id, group) %>%
+  summarise_at(c("F1", "F2", "F3", "patch_time"), mean, na.rm = TRUE)
+
+for (f in c("F1", "F2", "F3")) {
+  g <- ggplot(aes_string(y = f, x = "patch_time"), data = df) +
+    geom_point(alpha=0.6, size = 3, color = "deeppink") +  # Increase dot size and change color
+    geom_smooth(method = 'lm', se = TRUE, color = "deeppink", fill = "deeppink", alpha = 0.3) +  # Change regression line color, opaque dodgerblue shading
+    scale_colour_brewer(palette="Set1") +
+    ggpubr::stat_cor(method = "spearman",  alternative = "two.sided", 
+                     cor.coef.name = c("r"), label.sep = ", ", 
+                     label.x.npc = "left", label.y.npc = "bottom", 
+                     digits = 3, r.digits = 3, p.digits = 3,
+                     size = 6,  # Make the correlation label bigger
+                     label.padding = unit(0.4, "lines"),  # Padding inside the box
+                     label.r = unit(0.2, "lines"),  # Rounded corners
+                     label.background = element_rect(fill = "white", color = "deeppink", size = 0.5)) +  # White background, dodgerblue border, rounded edges
+   ylab(f) + 
+  #scale_x_reverse() +
+   xlab("Patch time") +
+    theme(panel.background = element_blank(),  # Ensure background is transparent
+          panel.grid.major = element_blank(),   # Remove major grid lines
+          panel.grid.minor = element_blank(),
+          axis.line = element_line(color = "black"),  # Add axis lines
+          axis.ticks = element_line(color = "black"),
+          axis.title = element_text(size = 16, color = "black"),  # Increase axis labels size and make text black
+          axis.text = element_text(size = 14, color = "black")) +  # Increase tick label size and color to black
+    scale_x_continuous(breaks = scales::pretty_breaks(n = 4)) +  # Reduce number of x ticks
+    scale_y_continuous(breaks = scales::pretty_breaks(n = 4))  # Reduce number of y ticks
+
+print(g)
+  
+}
+
+
+```
+
 ## Statistical model of leaving time
 Here, instead of Poisson GLM we use Gamma GLM which is more appropriate for continuous responses
 The model logic is the same as in the case of patch actions taken
@@ -439,6 +492,11 @@ m2.sl <- lme4::lmer(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*gr
 # Gamma GLM with random slopes
 glm2.sl <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*group + (1+ decay_fac + travel_time_lvl|id), family=Gamma(link=linkfunc))
 
+# Gamma GLM with gender covariate 
+glm2.sl.gen <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*group +group*gender.str+ (1+ decay_fac + travel_time_lvl|id), family=Gamma(link=linkfunc))
+
+
+
 # without three way interaction 
 glm2.sl.2 <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl + travel_time_lvl*group + decay_fac*group + (1+ decay_fac + travel_time_lvl|id), family=Gamma(link=linkfunc))
 
@@ -448,13 +506,17 @@ glm2.sl.trvl <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*trave
 glm2.sl.dec <- glmmTMB::glmmTMB(data=data, formula=patch_time ~ decay_fac*travel_time_lvl*group + (1+ decay_fac |id), family=Gamma(link=linkfunc))
 
 
-performance::compare_performance(m2,glm2, m2.sl, glm2.sl, glm2.sl.2, glm2.sl.trvl, glm2.sl.dec)
+performance::compare_performance(m2,glm2, m2.sl, glm2.sl, glm2.sl.gen, glm2.sl.2, glm2.sl.trvl, glm2.sl.dec)
 ```
 
 ### Analyze winning model
 Very similar to actions taken there is a three way interaction decay*traveltime*group 
 ```{r}
 car::Anova(glm2.sl)
+```
+
+```{r}
+car::Anova(glm2.sl.gen)
 ```
 
 ### Understadn three way interaction 
@@ -735,7 +797,7 @@ ggsave(
   units = c("in"),
   dpi = 300)
   #theme(axis.text.x = element_text(angle = 45, hjust = 1))
-write.csv(df_long, here::here("output", "data_reward.csv"))
+write.csv(df_long, here::here("output", paste0("data_reward",data_set,".csv")))
 ```
 
 ## Statistical model of remaining reward
@@ -1023,7 +1085,7 @@ pretty_table <- df2 %>%
   kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
   column_spec(1:4, bold = TRUE, border_right = TRUE) %>%
   add_header_above(c(" ", " ", "Rewards" = 2)) %>%
-  save_kable(here::here("output", "rewards.png"))
+  save_kable(here::here("output", paste0("rewards",data_set,".png")))
 
 # Print the pretty table
 print(pretty_table)
