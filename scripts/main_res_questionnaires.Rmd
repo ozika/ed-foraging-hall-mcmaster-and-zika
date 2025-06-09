@@ -10,7 +10,7 @@ output:
 ```{r}
 library(here)
 here::i_am(".ed-foraging-root")
-renv::restore(here::here())
+#renv::restore(here::here())
 
 
 renv::load(here::here())
@@ -27,7 +27,6 @@ corr_type = "spearman"
 required_packages = c("glmmTMB", "car", "parameters","tidyr", "see", "dplyr", "lmerTest", "parameters", "emmeans", "modelbased", "ggpubr", "kableExtra", "psych", "GPArotation", "corrplot", "nFactors")
 invisible(lapply(required_packages, require, character.only = TRUE))
 
-here::i_am(".hidden_root_foraging")
 adjustment_method = "holm"
 ```
 ```{r}
@@ -40,7 +39,6 @@ data <- data %>%
 ## add questionnaires data 
 qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_processed_questonnaire_data',data_set,'.csv')))
 qs$id <- qs$PROLIFICID
-
 if (questionnaire_family=="with_cia") {
   qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou", "cia",   "oci")]
 }  else if (questionnaire_family=="without_cia") {
@@ -364,15 +362,157 @@ write.csv(scores, here::here( 'anon-data', 'questionnaires', paste0('factor_scor
 ### Correlate all Items
 
 ```{r}
-dfs = read.csv(here::here("anon-data", "task_data", "speeding_up.csv"))
-
+dfs = read.csv(here::here("anon-data", "task_data", "speeding_up_effect.csv"))
+dfs$id <- as.factor(dfs$id)
+dfs$remaining_time <- as.numeric(dfs$remaining_time)
+dfs <- dfs[,c("id", "remaining_time")]
 
 ## add questionnaires data 
-qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_processed_questonnaire_data',data_set,'.csv')))
-qs$id <- qs$PROLIFICID
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_item_questonnaire_data',data_set,'.csv')))
+qs$id <- as.factor(qs$PROLIFICID)
 
-qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou", "cia",   "oci")]
 
-dfs = merge(dfs, qs, on="id")
+dfs2 = merge(dfs, qs, on="id", all.y = TRUE)
+
+dfs2<-dfs2[,colnames(dfs2)[!grepl("id", colnames(dfs2)) & !grepl("PROLIFICID", colnames(dfs2)) & !grepl("X", colnames(dfs2))]]
+
+
+```
+
+```{r fig.width=12, fig.height=4}
+
+cdf <- data.frame(cor(dfs2, method = "spearman")[,c("remaining_time")])
+cdf2 <- cdf[!grepl("remaining_time", rownames(cdf)),]
+
+if (questionnaire_family=="with_cia") {
+  rtcors <- data.frame(
+    item = rownames(cdf)[2:155],
+    corr = cdf[!grepl("remaining_time", rownames(cdf)),], 
+     questionnaire = c(rep("EAT-26 (Eating Attitudes)", 26), rep("EDE-Q (Eating Disorder)", 22), rep("CIA (Clinical Impairment)", 16), rep("AAI (Appearance Anxiety)", 10), 
+                      rep("STAI-T (Trait Anxiety)", 20), rep("BDI (Depression)", 21), 
+                      rep("IOU (Intolerance of Uncertainty)", 21), rep("OCI (Obsessive-Compulsive Inventory)", 18))  # Adjust this based on your actual data
+  )
+
+}  else if (questionnaire_family=="without_cia") {
+     rtcors <- data.frame(
+       item = rownames(cdf)[2:155],
+    corr = cdf[!grepl("remaining_time", rownames(cdf)),], 
+     questionnaire = c(rep("EAT-26 (Eating Attitudes)", 26), rep("EDE-Q (Eating Disorder)", 22),  rep("AAI (Appearance Anxiety)", 10), 
+                      rep("STAI-T (Trait Anxiety)", 20), rep("BDI (Depression)", 21), 
+                      rep("IOU (Intolerance of Uncertainty)", 21), rep("OCI (Obsessive-Compulsive Inventory)", 18))  # Adjust this based on your actual data
+  )
+   
+}
+
+names <- read.csv(here::here('anon-data', 'questionnaires', 'single_item_names.csv'))
+write.csv(rtcors, here::here('anon-data', 'task_data', 'correlations_with_items.csv'))
+
+rtcors = merge(rtcors, names, at=item)
+
+if (questionnaire_family=="with_cia") {
+   questionnaire_colors <- c("EAT-26 (Eating Attitudes)" = "purple", "EDE-Q (Eating Disorder)" = "deeppink", "CIA (Clinical Impairment)" = "yellow3", "AAI (Appearance Anxiety)" = "brown2", 
+                          "STAI-T (Trait Anxiety)" = "midnightblue", "BDI (Depression)" = "dodgerblue", 
+                          "IOU (Intolerance of Uncertainty)" = "darkgoldenrod2", "OCI (Obsessive-Compulsive Inventory)" = "seagreen4")
+  }  else if (questionnaire_family=="without_cia") {
+    questionnaire_colors <- c("EAT-26 (Eating Attitudes)" = "purple", "EDE-Q (Eating Disorder)" = "deeppink", "AAI (Appearance Anxiety)" = "brown2", 
+                          "STAI-T (Trait Anxiety)" = "midnightblue", "BDI (Depression)" = "dodgerblue", 
+                          "IOU (Intolerance of Uncertainty)" = "darkgoldenrod2", "OCI (Obsessive-Compulsive Inventory)" = "seagreen4")
+  }
+
+
+
+# Plot factor loadings
+plot_factor_loadings <- ggplot(rtcors, aes(x = full_question, y = corr, fill = questionnaire)) +
+  geom_bar(stat = "identity") +
+  geom_hline(yintercept = 0, color = "black") +
+  scale_fill_manual(values = questionnaire_colors) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),  # Show full questions as rotated labels
+    strip.background = element_blank(),
+    strip.text = element_text(size = 14, face = "plain", hjust = 0),
+    panel.grid.major.x = element_blank(),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  ) +
+  labs(x = "Question", y = "Correlation", fill = "")
+
+print(plot_factor_loadings)
+# Save
+ggsave(
+  here::here("output", "correlations_with_remaining_time_not_ordered.pdf"), 
+  plot = plot_factor_loadings,
+  scale = 1,
+  width = 25,
+  height = 12,
+  units = "in",
+  dpi = 300
+)
+
+
+rtcors <- rtcors %>%
+  arrange(corr) %>%
+  mutate(full_question = factor(full_question, levels = full_question))
+
+
+# Plot factor loadings
+plot_factor_loadings <- ggplot(rtcors, aes(x = full_question, y = corr, fill = questionnaire)) +
+  geom_bar(stat = "identity") +
+  geom_hline(yintercept = 0, color = "black") +
+  scale_fill_manual(values = questionnaire_colors) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),  # Show full questions as rotated labels
+    strip.background = element_blank(),
+    strip.text = element_text(size = 14, face = "plain", hjust = 0),
+    panel.grid.major.x = element_blank(),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  ) +
+  labs(x = "Question", y = "Correlation", fill = "")
+
+print(plot_factor_loadings)
+# Save
+ggsave(
+  here::here("output", "correlations_with_remaining_time.pdf"), 
+  plot = plot_factor_loadings,
+  scale = 1,
+  width = 25,
+  height = 12,
+  units = "in",
+  dpi = 300
+)
+
+```
+
+```{r}
+library(dplyr)
+library(kableExtra)
+library(scales)
+library(readr)
+
+# Load the data
+df <- rtcors
+
+# Normalize correlation for coloring
+df <- df %>%
+  mutate(
+    abs_corr = abs(corr),
+    color = scales::col_numeric(
+      palette = c("grey90", "purple"),
+      domain = c(0, 1)
+    )(abs_corr),
+    corr_formatted = cell_spec(round(corr, 3), background = color, color = "white")
+  )
+
+# Create table
+df %>%
+  select(`Full Question` = full_question, Correlation = corr_formatted) %>%
+  kable("html", escape = FALSE, align = c("l", "c")) %>%
+  kable_styling(full_width = TRUE, position = "left", bootstrap_options = c("striped", "hover"))
 ```
 
