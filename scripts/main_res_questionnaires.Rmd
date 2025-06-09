@@ -384,6 +384,7 @@ dfs2<-dfs2[,colnames(dfs2)[!grepl("id", colnames(dfs2)) & !grepl("PROLIFICID", c
 cdf <- data.frame(cor(dfs2, method = "spearman")[,c("remaining_time")])
 cdf2 <- cdf[!grepl("remaining_time", rownames(cdf)),]
 
+
 if (questionnaire_family=="with_cia") {
   rtcors <- data.frame(
     item = rownames(cdf)[2:155],
@@ -408,6 +409,10 @@ names <- read.csv(here::here('anon-data', 'questionnaires', 'single_item_names.c
 write.csv(rtcors, here::here('anon-data', 'task_data', 'correlations_with_items.csv'))
 
 rtcors = merge(rtcors, names, at=item)
+rtcors <- rtcors %>%
+  arrange(desc(corr)) %>%
+  mutate(full_question = factor(full_question, levels = unique(full_question)))
+
 
 if (questionnaire_family=="with_cia") {
    questionnaire_colors <- c("EAT-26 (Eating Attitudes)" = "purple", "EDE-Q (Eating Disorder)" = "deeppink", "CIA (Clinical Impairment)" = "yellow3", "AAI (Appearance Anxiety)" = "brown2", 
@@ -516,3 +521,55 @@ df %>%
   kable_styling(full_width = TRUE, position = "left", bootstrap_options = c("striped", "hover"))
 ```
 
+### Look at official subscales
+
+
+```{r fig.width=10}
+sgr <-  read.csv(here::here("anon-data", "questionnaires", "subscales_and_single_items.csv"))
+
+sgr2 <- sgr %>%
+  group_by(questionnaire, Subscales) %>%
+  group_by(questionnaire, Subscales) %>%
+  summarise(corr = mean(corr), .groups = "drop") %>%
+  arrange(desc(corr)) %>%
+  mutate(Subscales = factor(Subscales, levels = unique(Subscales)))
+
+
+#rtcors <- sgr %>%
+#  arrange(corr) %>%
+#  mutate(full_question = factor(full_question, levels = full_question))
+
+
+# Plot factor loadings
+plot_factor_loadings <- ggplot(sgr2, aes(x = Subscales, y = corr, fill = questionnaire)) +
+  geom_bar(stat = "identity") +
+  geom_hline(yintercept = 0, color = "black") +
+  scale_fill_manual(values = questionnaire_colors) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),  # Show full questions as rotated labels
+    strip.background = element_blank(),
+    strip.text = element_text(size = 14, face = "plain", hjust = 0),
+    panel.grid.major.x = element_blank(),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10)
+  ) +
+  labs(x = "Question", y = "Correlation", fill = "")
+
+print(plot_factor_loadings)
+# Save
+ggsave(
+  here::here("output", "correlations_with_remaining_time_by_subscale.pdf"), 
+  plot = plot_factor_loadings,
+  scale = 1,
+  width = 12,
+  height = 6,
+  units = "in",
+  dpi = 300
+)
+
+
+
+```

@@ -371,6 +371,7 @@ df <- data %>%
   group_by(id, group,rem_time_q) %>% 
   summarise_at(c("logRT", "remaining_time"), mean)
 
+
 library(ggplot2)
 g <- ggplot(aes(y = logRT, x = remaining_time, color=group), data = df) +
   geom_point(alpha=0.2) +
@@ -558,6 +559,8 @@ if (do_reg==1) {
 df2 <- df %>% 
   group_by(id, group) %>% 
   summarise_at(c("reward", "remaining_time"), mean)
+
+write.csv(df2, here::here("anon-data", "task_data", "speeding_up_effect.csv"))
 
 
 # Plot
