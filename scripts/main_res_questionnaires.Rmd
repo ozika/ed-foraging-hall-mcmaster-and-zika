@@ -378,10 +378,58 @@ dfs2<-dfs2[,colnames(dfs2)[!grepl("id", colnames(dfs2)) & !grepl("PROLIFICID", c
 
 
 ```
+# for export
+```{r}
+# Required libraries
+library(dplyr)
+library(purrr)
+library(broom)
+library(stats)
+
+dfs2
+
+# Create a results data frame
+results <- dfs2 %>%
+  select(where(is.numeric)) %>%  # Keep only numeric columns
+  select(-remaining_time) %>%    # Exclude the reference variable
+  map_dfr(~ {
+    # Compute Spearman correlation
+    res <- cor.test(dfs2$remaining_time, ., method = "spearman")
+    tibble(
+      variable = deparse(substitute(.)),
+      rho = res$estimate,
+      df = res$parameter,
+      p_value = res$p.value
+    )
+  }, .id = "variable")
+results$item = results$variable
+# View results
+#names <- read.csv(here::here('anon-data', 'questionnaires', 'single_item_names.csv'))
+
+sgr <-  read.csv(here::here("anon-data", "questionnaires", "subscales_and_single_items.csv"))
+
+rs2 = merge(results, sgr, at=item)
+rs2 <- rs2 %>%
+  arrange(desc(rho)) %>%
+  mutate(full_question = factor(full_question, levels = unique(full_question)))
+
+rs2$p_value_holm_corrected <- stats::p.adjust(rs2$p_value, method = "holm", n = length(rs2$p_value))
+
+write.csv(rs2, here::here('anon-data', 'task_data', 'correlations_with_p_item_level.csv'))
+
+```
+
+```{r}
+### Subscale level 
+
+# c("holm", "hochberg", "hommel", "bonferroni", "BH", "BY",
+#   "fdr", "none")
+```
 
 ```{r fig.width=12, fig.height=4}
 
 cdf <- data.frame(cor(dfs2, method = "spearman")[,c("remaining_time")])
+
 cdf2 <- cdf[!grepl("remaining_time", rownames(cdf)),]
 
 
@@ -520,19 +568,145 @@ df %>%
   kable("html", escape = FALSE, align = c("l", "c")) %>%
   kable_styling(full_width = TRUE, position = "left", bootstrap_options = c("striped", "hover"))
 ```
+```{r}
+library(dplyr)
+library(kableExtra)
+library(scales)
+library(readr)
+
+# Define your color map
+questionnaire_colors <- c(
+  "EAT-26 (Eating Attitudes)" = "purple",
+  "EDE-Q (Eating Disorder)" = "deeppink",
+  "CIA (Clinical Impairment)" = "yellow3",
+  "AAI (Appearance Anxiety)" = "brown2",
+  "STAI-T (Trait Anxiety)" = "midnightblue",
+  "BDI (Depression)" = "dodgerblue",
+  "IOU (Intolerance of Uncertainty)" = "darkgoldenrod2",
+  "OCI (Obsessive-Compulsive Inventory)" = "seagreen4"
+)
+
+# Prepare and format data
+df <- rtcors %>%
+  mutate(
+    abs_corr = abs(corr),
+    corr_color = scales::col_numeric(
+      palette = c("grey90", "red"),
+      domain = c(0, 0.5)
+    )(abs_corr),
+    corr_formatted = cell_spec(round(corr, 3), background = corr_color, color = "white"),
+    questionnaire_formatted = cell_spec(
+      questionnaire,
+      background = questionnaire_colors[questionnaire],
+      color = "white"
+    )
+  ) %>%
+  arrange(desc(abs_corr)) %>%
+  slice(1:15)
+
+# Create HTML table
+df %>%
+  select(
+    Questionnaire = questionnaire_formatted,
+    `Full Question` = full_question,
+    `Correlation` = corr_formatted
+  ) %>%
+  kable("html", escape = FALSE, align = c("l", "l", "c")) %>%
+  kable_styling(full_width = TRUE, position = "left", bootstrap_options = c("striped", "hover")) %>% 
+  save_kable(here::here("output", paste0("top15_items_correlating",data_set,".png"))) 
+  #save_kable(here::here("output", paste0("top15_items_correlating",data_set,".pdf")))
+
+```
 
 ### Look at official subscales
 
+# recompute correlations by subscale
+```{r}
+### Correlate all Items
+
+
+
+dfs = read.csv(here::here("anon-data", "task_data", "speeding_up_effect.csv"))
+dfs$id <- as.factor(dfs$id)
+dfs$remaining_time <- as.numeric(dfs$remaining_time)
+dfs <- dfs[,c("id", "remaining_time")]
+
+## add questionnaires data 
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_item_questonnaire_data',data_set,'.csv')))
+qs$id <- as.factor(qs$PROLIFICID)
+
+
+dfs2 = merge(dfs, qs, on="id", all.y = TRUE)
+
+#dfs2<-dfs2[,colnames(dfs2)[!grepl("id", colnames(dfs2)) & !grepl("PROLIFICID", colnames(dfs2)) & !grepl("X", colnames(dfs2))]]
+
+
+library(dplyr)
+mapping <-  read.csv(here::here("anon-data", "questionnaires", "subscales_and_single_items.csv"))[, c("item", "Subscales")]
+# 1. Ensure column names in mapping match qs
+mapping$Subscales <- as.factor(mapping$Subscales)
+mapping$item <- as.character(mapping$item)
+
+# 2. Reshape qs to long format
+qs_long <- dfs2 %>%
+  select(id, remaining_time, all_of(mapping$item)) %>%
+  pivot_longer(cols = -c(id, remaining_time), names_to = "item", values_to = "value")
+
+# 3. Join with mapping to get subscale for each item
+qs_joined <- qs_long %>%
+  left_join(mapping, by = "item")
+
+# 4. Average items within each subscale per id
+qs_subscale <- qs_joined %>%
+  group_by(id, remaining_time, Subscales) %>%
+  summarise(mean_score = mean(value, na.rm = TRUE), .groups = "drop")
+
+# 5. Pivot back to wide format: one column per subscale
+qs_wide <- qs_subscale %>%
+  pivot_wider(names_from = Subscales, values_from = mean_score)
+
+# View result
+head(qs_wide)
+
+```
+
 
 ```{r fig.width=10}
-sgr <-  read.csv(here::here("anon-data", "questionnaires", "subscales_and_single_items.csv"))
+results <- qs_wide %>%
+  select(where(is.numeric)) %>%  # Keep only numeric columns
+  select(-remaining_time) %>%    # Exclude the reference variable
+  map_dfr(~ {
+    # Compute Spearman correlation
+    res <- cor.test(dfs2$remaining_time, ., method = "spearman")
+    tibble(
+      variable = deparse(substitute(.)),
+      rho = res$estimate,
+      df = res$parameter,
+      p_value = res$p.value
+    )
+  }, .id = "variable")
+results$item = results$variable
+# View results
 
-sgr2 <- sgr %>%
-  group_by(questionnaire, Subscales) %>%
-  group_by(questionnaire, Subscales) %>%
-  summarise(corr = mean(corr), .groups = "drop") %>%
-  arrange(desc(corr)) %>%
-  mutate(Subscales = factor(Subscales, levels = unique(Subscales)))
+
+results$p_value_holm_corrected <- stats::p.adjust(results$p_value, method = "holm", n = length(results$p_value))
+
+m2 <- read.csv(here::here("anon-data", "questionnaires", "subscales_and_single_items.csv"))
+unqs<- m2 %>% 
+  group_by(Subscales, questionnaire) %>%
+  summarize(mean=mean(corr))
+
+results$Subscales = results$item
+results = merge(results, unqs, on="item")
+
+results <- results %>%
+  arrange(desc(rho)) %>%
+  mutate(
+    item = factor(item, levels = unique(item)),  # reorder for plotting
+    Subscales = factor(Subscales, levels = unique(Subscales))
+  )
+
+write.csv(results, here::here('anon-data', 'task_data', 'correlations_with_p_subscale_level.csv'))
 
 
 #rtcors <- sgr %>%
@@ -541,7 +715,7 @@ sgr2 <- sgr %>%
 
 
 # Plot factor loadings
-plot_factor_loadings <- ggplot(sgr2, aes(x = Subscales, y = corr, fill = questionnaire)) +
+plot_factor_loadings <- ggplot(results, aes(x = item, y = rho, fill = questionnaire)) +
   geom_bar(stat = "identity") +
   geom_hline(yintercept = 0, color = "black") +
   scale_fill_manual(values = questionnaire_colors) +
