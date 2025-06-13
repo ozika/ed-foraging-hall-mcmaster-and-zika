@@ -1,0 +1,8 @@
+[submodule "foraging-ed-output"]
+	path = foraging-ed-output
+	url = git@gin.g-node.org:/ozika/foraging-ed-output.git
+	datalad-id = 9747d28c-5c80-435a-9c7e-6f044fa6f9a2
+[submodule "anon-data"]
+	path = anon-data
+	url = git@gin.g-node.org:/ozika/foraging-ed-anon-data.git
+	datalad-id = 81c9a73c-c982-43db-9e96-a2c7cc0c661d

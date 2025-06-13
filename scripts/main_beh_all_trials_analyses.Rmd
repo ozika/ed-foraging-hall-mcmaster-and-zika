@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(here)
 here::i_am(".ed-foraging-root")
-renv::restore(here::here())
+#renv::restore(here::here())
 
 renv::load(here::here())
 
@@ -24,7 +24,6 @@ data_set = "_alt_cutoff"
 required_packages = c("glmmTMB", "car", "parameters", "see", "bayestestR", "dplyr", "lmerTest", "effectsize", "emmeans", "modelbased", "ggpubr", "gtools", "tidyr")
 invisible(lapply(required_packages, require, character.only = TRUE))
 emmeans::emm_options(pbkrtest.limit = 11000)
-here::i_am(".hidden_root_foraging")
 adjustment_method = "holm"
 
 
@@ -222,15 +221,15 @@ NOTE: I removed the decision from the random slopes here - the models were not c
 
 
 data$remaining_time_reversed <-   data$remaining_time * (-1)
-
+data$gr <- data$group
 # models with speeding up within block
-glm1.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
-glm1.sl.2 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*remaining_time_reversed + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+glm1.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*gr + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+glm1.sl.2 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*gr*remaining_time_reversed + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
 
 
 
 # models with speeding up within episode
-glm2.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*group*patch_time + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
+glm2.sl.1 <- glmmTMB::glmmTMB(data=data, RT ~ decay_fac*travel_time_lvl*gr*patch_time + (1+decay_fac+travel_time_lvl|id), family = Gamma(link=linkfunc))
 
 #gender.str
 performance::compare_performance( glm1.sl.1, glm1.sl.2, glm2.sl.1)#
@@ -245,24 +244,24 @@ car::Anova(glm1.sl.2)
 
 #car::Anova(glm2.sl.1)
 
-# three way int decay*group*patch time
-em <- emtrends(glm2.sl.1, pairwise ~ group | decay_fac , var = "patch_time", adjust=adjustment_method)
+# three way int decay*gr*patch time
+em <- emtrends(glm2.sl.1, pairwise ~ gr | travel_time_lvl , var = "patch_time", adjust=adjustment_method)
 em
-em <- emtrends(glm2.sl.1, pairwise ~  decay_fac | group , var = "patch_time", adjust=adjustment_method)
+em <- emtrends(glm2.sl.1, pairwise ~  travel_time_lvl | gr , var = "patch_time", adjust=adjustment_method)
 em
-em <- emtrends(glm2.sl.1, pairwise ~  decay_fac * group , var = "patch_time", adjust=adjustment_method)
+em <- emtrends(glm2.sl.1, pairwise ~  travel_time_lvl * gr , var = "patch_time", adjust=adjustment_method)
 em
-sl<-modelbased::estimate_slopes(glm2.sl.1, trend = "patch_time", at=c("decay_fac", "group"), ci = 0.95)
-sl
+#sl<-modelbased::estimate_slopes(glm2.sl.1, trend = "patch_time", at=c("decay_fac", "gr"), ci = 0.95)
+#sl
 
-# group 1 gets faster within patch in the fast condition 
-# group 2 get slower in the fast reward decay condition over time but faster in the slow decay condition
+# gr 1 gets faster within patch in the fast condition 
+# gr 2 get slower in the fast reward decay condition over time but faster in the slow decay condition
 
-em2 <- emtrends(glm2.sl.1, pairwise ~ group | decay_fac*travel_time_lvl , var = "patch_time", adjust=adjustment_method)
+em2 <- emtrends(glm2.sl.1, pairwise ~ gr | travel_time_lvl*travel_time_lvl , var = "patch_time", adjust=adjustment_method)
 em2
 
-sl<-modelbased::estimate_slopes(glm2.sl.1, trend = "patch_time", at=c( "group", "decay_fac", "travel_time_lvl"), ci = 0.95)
-sl
+#sl<-modelbased::estimate_slopes(glm2.sl.1, trend = "patch_time", at=c( "gr", "decay_fac", "travel_time_lvl"), ci = 0.95)
+#sl
 
 ```
 
@@ -328,7 +327,7 @@ $contrasts
  group1 - group2 -0.000364 5.03e-05 Inf  -7.244  <.0001
 
 ```{r}
-em <- emtrends(glm1.sl.2, pairwise ~ group , var = "remaining_time_reversed", adjust=adjustment_method)
+em <- emtrends(glm1.sl.2, pairwise ~ gr , var = "remaining_time_reversed", adjust=adjustment_method)
 em
 
 data$rem_time_q <- gtools::quantcut(as.numeric(data$remaining_time_reversed), q = seq(0,1,0.05))
@@ -635,8 +634,8 @@ m.optact <- lmerTest::lmer(data=df, optim_dev ~ remaining_time_z*group  + (1|id)
 car::Anova(m.optact)
 #em <- emtrends(m.rew, pairwise ~ 1 , var = "remaining_time_z", adjust=adjustment_method)
 #em
-sl<-modelbased::estimate_slopes(m.optact, trend = "remaining_time_z", ci = 0.95)
-sl
+#sl<-modelbased::estimate_slopes(m.optact, trend = "remaining_time_z", ci = 0.95)
+#sl
 
 # Build relationship sting 
 if (sl$p < 0.001) { 
@@ -733,8 +732,8 @@ m.rew <- lmerTest::lmer(data=df, patch_actions_taken ~ remaining_time_z*group  +
 car::Anova(m.rew)
 #em <- emtrends(m.rew, pairwise ~ 1 , var = "remaining_time_z", adjust=adjustment_method)
 #em
-sl<-modelbased::estimate_slopes(m.rew, trend = "remaining_time_z", ci = 0.95)
-sl
+##sl<-modelbased::estimate_slopes(m.rew, trend = "remaining_time_z", ci = 0.95)
+#sl
 
 # Build relationship sting 
 if (sl$p < 0.001) { 
