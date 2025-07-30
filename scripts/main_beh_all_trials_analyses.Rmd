@@ -990,54 +990,79 @@ data$F2.ms <- gtools::quantcut(data$F2, q = c(0, 0.5, 1),
 data$F3.ms <- gtools::quantcut(data$F3, q = c(0, 0.5, 1), 
                                  labels = c("low", "high"))
 
-## GROUP
-df <- data %>% 
-  group_by(id, group,rem_time_q) %>% 
-  summarise_at(c("logRT", "remaining_time"), mean)
-g <- ggplot(aes(y = logRT, x = remaining_time, color=group), data = df) +
-  geom_point(alpha=0.2) +
-    geom_smooth(method = 'lm', se = TRUE)  + 
+library(tidyverse)
+library(here)
+
+wi = 3
+he = 4
+alpha = 0.1
+
+# --- GROUP plot ---
+df_group <- data %>% 
+  group_by(id, group, rem_time_q) %>% 
+  summarise(across(c(logRT, remaining_time), mean), .groups = "drop")
+
+g1 <- ggplot(df_group, aes(y = logRT, x = remaining_time, color = group)) +
+  geom_point(alpha = alpha) +
+  geom_smooth(method = 'lm', se = TRUE) +
   scale_x_reverse() +
-  scale_color_manual(values = rep(c("maroon4","dodgerblue"), 20))  
-  #ggtitle("F1 ~ TF1 * wave * Deaths ") 
-g
+  scale_color_manual(
+    values = c("maroon4", "dodgerblue"),
+    labels = c("sED", "HC"),
+    name = "Group"
+  ) +
+  xlab("Remaining Time") +
+  ggtitle("Split by Group")
+print(g1)
+ggsave(filename = here("output", "plot_group.pdf"), plot = g1, width = wi, height = he)
 
 
-## F1 ED
-df <- data %>% 
-  group_by(id, F1.ms,rem_time_q) %>% 
-  summarise_at(c("logRT", "remaining_time"), mean)
-g <- ggplot(aes(y = logRT, x = remaining_time, color=F1.ms), data = df) +
-  geom_point(alpha=0.2) +
-    geom_smooth(method = 'lm', se = TRUE)  + 
-  scale_x_reverse() +
-  scale_color_manual(values = rep(c("dodgerblue", "maroon4"), 20))  
-  ggtitle("Split by F1") 
-g
+# --- F1 plot ---
+df_f1 <- data %>% 
+  group_by(id, F1.ms, rem_time_q) %>% 
+  summarise(across(c(logRT, remaining_time), mean), .groups = "drop")
 
-## F2 Uncertainty
-df <- data %>% 
-  group_by(id, F2.ms,rem_time_q) %>% 
-  summarise_at(c("logRT", "remaining_time"), mean)
-g <- ggplot(aes(y = logRT, x = remaining_time, color=F2.ms), data = df) +
-  geom_point(alpha=0.2) +
-    geom_smooth(method = 'lm', se = TRUE)  + 
+g2 <- ggplot(df_f1, aes(y = logRT, x = remaining_time, color = F1.ms)) +
+  geom_point(alpha = alpha) +
+  geom_smooth(method = 'lm', se = TRUE) +
   scale_x_reverse() +
-  scale_color_manual(values = rep(c("dodgerblue", "maroon4"), 20))  
-  ggtitle("Split by F2") 
-g
+  scale_color_manual(values = c("dodgerblue", "maroon4")) +
+  xlab("Remaining Time") +
+  ggtitle("Split by F1")
+print(g2)
+ggsave(filename = here("output", "plot_F1.pdf"), plot = g2, width = wi, height = he)
 
-## F3 Anxious Depression
-df <- data %>% 
-  group_by(id, F3.ms,rem_time_q) %>% 
-  summarise_at(c("logRT", "remaining_time"), mean)
-g <- ggplot(aes(y = logRT, x = remaining_time, color=F3.ms), data = df) +
-  geom_point(alpha=0.2) +
-    geom_smooth(method = 'lm', se = TRUE)  + 
+
+# --- F2 plot ---
+df_f2 <- data %>% 
+  group_by(id, F2.ms, rem_time_q) %>% 
+  summarise(across(c(logRT, remaining_time), mean), .groups = "drop")
+
+g3 <- ggplot(df_f2, aes(y = logRT, x = remaining_time, color = F2.ms)) +
+  geom_point(alpha = alpha) +
+  geom_smooth(method = 'lm', se = TRUE) +
   scale_x_reverse() +
-  scale_color_manual(values = rep(c("dodgerblue", "maroon4"), 20))  
-  ggtitle("Split by F3") 
-g
+  scale_color_manual(values = c("dodgerblue", "maroon4")) +
+  xlab("Remaining Time") +
+  ggtitle("Split by F2")
+print(g3)
+ggsave(filename = here("output", "plot_F2.pdf"), plot = g3, width = wi, height = he)
+
+
+# --- F3 plot ---
+df_f3 <- data %>% 
+  group_by(id, F3.ms, rem_time_q) %>% 
+  summarise(across(c(logRT, remaining_time), mean), .groups = "drop")
+
+g4 <- ggplot(df_f3, aes(y = logRT, x = remaining_time, color = F3.ms)) +
+  geom_point(alpha = alpha) +
+  geom_smooth(method = 'lm', se = TRUE) +
+  scale_x_reverse() +
+  scale_color_manual(values = c("dodgerblue", "maroon4")) +
+  xlab("Remaining Time") +
+  ggtitle("Split by F3")
+print(g4)
+ggsave(filename = here("output", "plot_F3.pdf"), plot = g4, width = wi, height = he)
 ```
 
 ## Model comparison for 

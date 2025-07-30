@@ -24,7 +24,6 @@ data_set = "_alt_cutoff"
 required_packages = c("glmmTMB", "car", "parameters", "see", "bayestestR", "dplyr", "lmerTest", "effectsize", "emmeans", "modelbased", "ggpubr", "gtools", "tidyr")
 invisible(lapply(required_packages, require, character.only = TRUE))
 emmeans::emm_options(pbkrtest.limit = 11000)
-here::i_am(".hidden_root_foraging")
 adjustment_method = "holm"
 
 
@@ -260,6 +259,8 @@ write.csv(expdf, here::here( 'output', 'group_rem_time_bootstrap_500.csv'))
 ```
 
 ```{r}
+#write.csv(expdf, here::here( 'output', 'group_rem_time_bootstrap_500.csv'))
+expdf = read.csv(here::here( 'output', 'group_rem_time_bootstrap_500.csv'))
 library(ggplot2)
 library(dplyr)
 
@@ -305,7 +306,7 @@ library(dplyr)
 p_low <- quantile(expdf$Chisq, 0.025)
 p_high <- quantile(expdf$Chisq, 0.975)
 
-ggplot(expdf, aes(x = Chisq)) +
+gg<-ggplot(expdf, aes(x = Chisq)) +
   geom_histogram(
     bins = 50,
     aes(fill = ..x.. >= p_low & ..x.. <= p_high),
@@ -317,6 +318,8 @@ ggplot(expdf, aes(x = Chisq)) +
   geom_segment(aes(x = p_low, xend = p_low, y = 0, yend = 80), color = "red", linetype = "dashed") +
   geom_segment(aes(x = p_high, xend = p_high, y = 0, yend = 80), color = "red", linetype = "dashed") +
   geom_segment(aes(x = 49.5, xend = 49.5, y = 0, yend = 85), color = "darkgreen", linetype = "dashed") +
+  ylab("Frequency") +
+  xlab("Chi Squared (for group * remaining time interaction)") +
   
   # Labels at top of lines
   annotate("text", x = p_low, y = 82, 
@@ -333,6 +336,8 @@ ggplot(expdf, aes(x = Chisq)) +
   # facet_grid(cols = vars(prop)) +
   
   theme_minimal()
+print(gg)
+ggsave(filename = here("output", "X2_hist_plot.pdf"), plot = gg, width = 7, height = 5)
 
 ```
 
