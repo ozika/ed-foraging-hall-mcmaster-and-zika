@@ -547,7 +547,7 @@ Very similar to actions taken there is a three way interaction decay*traveltime*
 car::Anova(glm2.sl.2)
 ```
 
-## Remaining time
+## Remaining time, only leaving trials
 Adding remaining also improves fit
 ```{r}
 linkfunc ="log"
