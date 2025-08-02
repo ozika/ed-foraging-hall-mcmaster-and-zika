@@ -17,9 +17,7 @@ here::i_am(".ed-foraging-root")
 renv::load(here::here())
 
 # data set 
-# "" = stadnard
-# "_alt_cutoff" = alternative cutoff EAT26>=20
-data_set = "_alt_cutoff"
+data_set = ""
 
 required_packages = c("glmmTMB", "car", "parameters", "see", "bayestestR", "dplyr", "lmerTest", "effectsize", "emmeans", "modelbased", "ggpubr", "gtools", "tidyr")
 invisible(lapply(required_packages, require, character.only = TRUE))

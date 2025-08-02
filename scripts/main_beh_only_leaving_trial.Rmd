@@ -17,9 +17,7 @@ renv::load(here::here())
  
 
 # data set 
-# "" = standard
-# "_alt_cutoff" = alternative cutoff in response to reviews
-data_set = "_alt_cutoff"
+data_set = ""
 
 # renv::snapshot()
 

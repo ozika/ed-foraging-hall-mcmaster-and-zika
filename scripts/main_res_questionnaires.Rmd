@@ -16,9 +16,7 @@ here::i_am(".ed-foraging-root")
 renv::load(here::here())
  
 # data set 
-# "" = stadnard EAT26<14
-# "_alt_cutoff" = alternative cutoff EAT26<20
-data_set = "_alt_cutoff"
+data_set = ""
 
 questionnaire_family = "with_cia" # alt without cia - for the review process, asked by the reviewers
 
