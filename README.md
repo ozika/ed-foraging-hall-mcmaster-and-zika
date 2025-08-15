@@ -1,8 +1,10 @@
 This is a repo containing data and analysis scripts associated with following paper: 
 
-```
 
-```
+> Hall-McMaster, S.\*, & Zika, O. \*(2025). Increasing Response Vigour Under Time Pressure as a Transdiagnostic Marker of Eating Disorders. Computational Psychiatry, 9(1), pp. 124–141. DOI: https://doi.org/10.5334/cpsy.130*
+
+
+---
 
 ## Reproducibility instructions
 
