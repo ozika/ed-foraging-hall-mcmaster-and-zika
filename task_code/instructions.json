@@ -1,0 +1,31 @@
+{
+    "consent": {
+      "page1": ["Welcome to the experiment!\n\nToday you will become a pirate, travelling to different islands in search of buried treasure. Before we begin, we need to make sure we have your consent to participate.\n\n\n\nPress space to continue"],
+      "page2": ["Aim of the study\n\nIn this study we want to understand how humans make decisions based on reward information. You are eligible for this study if you are fluent in English and 18-40 years old.\n\n\n\nPress space to continue"],
+      "page3": ["Procedure and content of the study\n\nFor this study, we invented a game: you are a pirate sailing to different islands in search of buried treasure. The amount of treasure you dig up will decrease the longer you spend on an island. So you will need to decide when to leave each island to sail to a new one.\n\nWe will first ask you for some basic demographic information. We will then ask you to carefully read through the instructions about the game, which will help you earn more money. After that, you will be ready to start.\n\nPlease only participate from a computer (no mobiles, no tablets) and if your screen is at least 13-inch diagonal. Also know that you will need remain in full screen mode for the entire experiment. If you exit full screen mode, there is no guarantee we can compensate you.\n\n\n\nPress space to continue"],
+      "page4": ["What will happen to the data?\n\nThis study is a research project of the Max Planck Institute for Human Development, Berlin. The data collected will be used for research purposes only. Your Prolific ID will be stored separately from the study data. The study data will be stored under an individual code number. This code number is stored on a separate code list in a secure location, and can only be accessed by a limited number of project members. The code list is the only link between your Prolific ID and your study data. The code list will be kept for five years, at which point it will be deleted and it will no longer be possible to link the study data to your Prolific ID.\n\nThe study data (but not Prolific ID) may be shared with cooperation partners and made publicly accessible via research databases or scientific publications. Data from this session will be combined with data from the earlier session of 'Eating attitudes and pirates', for the purposes of investigating relationships bewteen eating attitudes, mental health and decision-making. The study data may also be used for new research questions going beyond the purposes of this particular study. Study data are only transferred or made publicly accessible without Prolific ID or any data in which persons are identifiable.\n\n\n\nPress space to continue"],
+      "page5": ["Participation is voluntary\n\nParticipation in this study is voluntary. You may withdraw from the study or withdraw your consent to data processing and usage any time before payment. To do this, please contact neuroexperiments@mpib-berlin.mpg.de. Please note that after the code list has been deleted, it is no longer possible to link your Prolific ID to your study data.\n\n\n\nPress space to continue"],
+      "page6": ["Consent\n\nThe study should take about 30-35 minutes. You will receive a base compensation of £5.50 and a bonus of up to £2 depending on your performance.\n\n\n\nBy pressing space, I confirm that I meet the eligibility criteria and I consent to participate."],
+      "page7": ["Consent\n\nThe study should take about 35 minutes. You will receive a base compensation of £5.50 and a bonus of up to £2 depending on your performance on the main task.\n\n\n\nBy pressing space, I confirm that I meet the eligibility criteria and I consent to participate."]
+    },
+    "screening": {
+      "page1": ["What colour is the ocean according to the following text?\n\n\n\nMany swashbuckling pirates have stories sailing on clear blue waters. This question is not about those pirates. This question is about checking you are human so please select purple as your answer."],
+      "page2": ["How many legs does a parrot have according to the following text?\n\n\n\nIf dogs are man's best friend then parrots are a pirate's best friend. It is widely believed that parrots have two legs, but this is not true. Parrots have a third, wooden leg they keep for exceptional circumstances, so be sure to enter three when answering."]
+    },
+    "demographics": {
+      "page1": ["How old are you?\n\nType your age using the number keys and press enter to continue."],
+      "page3": ["What's your gender identity?\n\nType 0 for female, 1 for male, 2 for gender diverse and press enter to continue."],
+      "page2": ["How many years of formal education have you completed, starting from primary school and including any years after high school?\n\nType your answer and press enter to continue."]
+    },
+    "task": {
+      "page1": ["Let's get started.\n\nDuring the game you will see islands filled with buried treasure."],
+      "page2": ["To reach a new island, it will take some time sail there."],
+      "page3": ["Once you arrive on an island, you can begin digging for treasure using the space bar."],
+      "page4": ["Each time you dig, you will add some gold medallions to your treasure chest. You will need to wait until the medallions disappear from the screen before you can make your next dig."],
+      "page5": ["The number of medallions added to your treasure chest will decrease with each dig you make on an island. This means you will need to decide when to leave the island and set sail for a different one."],
+      "page6": ["When you decide to leave an island, press the s key and you will begin sailing to a new island."],
+      "page7": ["This bit is really crucial.\n\nEach block will take place in a different ocean from around the world. This means that islands will take more (or less) time to sail to, and the treasure on each island will decrease more (or less) quickly with each dig, depending on the block you're in."],
+      "page8": ["You will have 7.5 minutes for each block, with the time shown in the top right corner of the screen. Your time in each block is limited, so try to make decisions that allow you to collect as much treasure as you can. There will be four blocks in total."],
+      "page9": ["Ready to raise your sails and collect some treasure?"]
+    }
+  }
