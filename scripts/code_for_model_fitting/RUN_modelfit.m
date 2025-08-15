@@ -67,7 +67,7 @@ fname=[datapath fs 'task_data' fs 'full_beh_data.csv'];
 T = readtable(fname); 
 
 % get sub IDs
-fname_qscores=[datapath fs 'questionnaires' fs 'anonymized_processed_questonnaire_data.csv'];
+fname_qscores=[datapath fs 'questionnaires' fs 'anonymized_processed_questionnaire_data.csv'];
 T_eat26=readtable(fname_qscores);
 sub_ids=unique(T_eat26.PROLIFICID);
 nsubs=length(sub_ids);

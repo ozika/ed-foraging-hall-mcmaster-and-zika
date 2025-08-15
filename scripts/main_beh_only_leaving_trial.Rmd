@@ -40,7 +40,7 @@ rew$total_rewards <- rew$patch_reward_recieved
 data = merge(data, rew, by=c("id","travel_time_lvl", "decay_lvl")) # NA's match
 
 ## add questionnaires data 
-qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_processed_questonnaire_data',data_set,'.csv')))
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_processed_questionnaire_data',data_set,'.csv')))
 qs$id <- qs$PROLIFICID
 qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq", "cia", "aai", "stait", "bdi",  "iou",  "oci")]
 data = merge(data, qs, by=c("id")) # NA's match

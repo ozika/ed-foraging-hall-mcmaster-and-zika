@@ -46,7 +46,7 @@ data <- data %>%
 data$cum_reward_patch <- data$cum_reward_patch/100
 
 ## add questionnaires data 
-qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_processed_questonnaire_data',data_set,'.csv')))
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_processed_questionnaire_data',data_set,'.csv')))
 qs$id <- qs$PROLIFICID
 qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou",  "oci")]
 data = merge(data, qs, by=c("id"), all.x = TRUE) # NA's match
