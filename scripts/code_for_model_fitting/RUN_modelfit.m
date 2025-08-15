@@ -34,7 +34,7 @@ if ispc
 else
     folders   = strfind(mydir,'/');
 end
-path = mydir(1:folders(end));
+path = mydir(1:folders(end-1));
 fs = filesep;
 datapath = [path 'anon-data']; % or [path 'foraging-ed-anon-data'];
 modelpath = [pwd fs 'models'];
@@ -63,11 +63,11 @@ maxparam_global =   [50 2 1 1];
 trials_global=1;    %1 = all trials, 2 = first half of each block, 3 = second half of each block
 
 % load full behav data
-fname=[datapath fs 'task_data' fs 'full_beh_data_alt_cutoff.csv'];
+fname=[datapath fs 'task_data' fs 'full_beh_data.csv'];
 T = readtable(fname); 
 
 % get sub IDs
-fname_qscores=[datapath fs 'questionnaires' fs 'anonymized_processed_questonnaire_data_alt_cutoff.csv'];
+fname_qscores=[datapath fs 'questionnaires' fs 'anonymized_processed_questonnaire_data.csv'];
 T_eat26=readtable(fname_qscores);
 sub_ids=unique(T_eat26.PROLIFICID);
 nsubs=length(sub_ids);
