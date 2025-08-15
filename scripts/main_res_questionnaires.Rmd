@@ -29,7 +29,7 @@ adjustment_method = "holm"
 ```
 
 ```{r}
-qq <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_ALL_questonnaire_data',data_set,'.csv')))
+qq <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_ALL_questionnaire_data',data_set,'.csv')))
 qq<-qq[,c("PROLIFICID",colnames(qq)[grepl(".cia", colnames(qq))])]
 qq$cia <- apply(qq[,2:17], 1, sum)
 qq<-qq[,c("PROLIFICID", "cia")]
@@ -45,13 +45,12 @@ data <- data %>%
   mutate(decision_type = recode(decision_type, `1` = 0, `2` = 1))
 
 ## add questionnaires data 
-qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_processed_questonnaire_data',data_set,'.csv')))
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_processed_questionnaire_data',data_set,'.csv')))
 qs$PROLIFICID <- as.factor(qs$PROLIFICID)
 qs <- qs[, colnames(qs)[!grepl("cia", colnames(qs))]]
 
 qs<-merge(qs, qq, on="PROLIFICID", all.x=TRUE)
 qs$id <- qs$PROLIFICID
-
 if (questionnaire_family=="with_cia") {
   qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou", "cia",   "oci")]
 }  else if (questionnaire_family=="without_cia") {
@@ -221,7 +220,7 @@ ggplot(df_summary, aes(x = Variable, y = mean_value, fill = group)) +
 ```
 ### Factor analysis
 ```{r fig.width=15, fig.height=15}
-qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_item_questonnaire_data',data_set,'.csv')))
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_item_questionnaire_data',data_set,'.csv')))
 
 if (questionnaire_family=="with_cia") {
  # qs <- qs[,c("id", "bmi",  "eat26",  "eat26_oralcontrol", "eat26_dieting", "eat26_bulimia",  "edeq",  "aai", "stait", "bdi",  "iou", "cia",   "oci")]
@@ -381,7 +380,7 @@ dfs$remaining_time <- as.numeric(dfs$remaining_time)
 dfs <- dfs[,c("id", "remaining_time")]
 
 ## add questionnaires data 
-qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_item_questonnaire_data',data_set,'.csv')))
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_item_questionnaire_data',data_set,'.csv')))
 qs$id <- as.factor(qs$PROLIFICID)
 
 
@@ -655,7 +654,7 @@ dfs$remaining_time <- as.numeric(dfs$remaining_time)
 dfs <- dfs[,c("id", "remaining_time")]
 
 ## add questionnaires data 
-qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_item_questonnaire_data',data_set,'.csv')))
+qs <- read.csv(here::here( 'anon-data', 'questionnaires', paste0('anonymized_item_questionnaire_data',data_set,'.csv')))
 qs$id <- as.factor(qs$PROLIFICID)
 
 
